@@ -1,11 +1,18 @@
-// Unterholz UH-20 — circuit model of a JFET guitar preamp (clean "Rhythmus" channel and Marshall-style "Lead" channel),
-// a long-tailed-pair power stage with supply sag, and an analog cab-sim output.
-// This is a line-for-line port of the REAPER JSFX reference implementation (jsfx/Unterholz UH-20.jsfx).
-// Signals are modelled in volts. SPDX-License-Identifier: AGPL-3.0-or-later
+// Unterholz UH-20: the circuit of the box, simulated from its parts. Two channels into one class AB power section.
+//   RHYTHM: J201 input stage (Clip: LEDs at the stack input and a gang that opens up the stage's source), Mark III tone stack,
+//           Volume (1M log, bright cap), two J201 gain stages.
+//   LEAD:   the 2203 preamp translated stage by stage into J201s (hardware/spice/jfet800.cir), Drive = its 1M log volume, the
+//           Clip LEDs behind the cold clipper, a source follower into a Marshall tone stack.
+//   POWER:  Master (1M log) into a J201 long-tailed pair, then an LM3886 (class AB) with global feedback to the pair's second gate,
+//           Presence in that feedback network, the speaker load, and rails from an unregulated supply whose series resistance is
+//           the Sag control. REC: an active cab simulator on the speaker output (1/20 divider); AMP: the same divider without it.
+// Every J201 is the vendor model (hardware/spice/j201.lib) solved per sample with its real loading (source/dsp/JfetKit.h).
+// SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include <cmath>
 #include <algorithm>
 #include <initializer_list>
+#include "JfetKit.h"
 
 namespace uh20 {
 
@@ -50,29 +57,11 @@ struct Butter8 {
     inline double process(double x) { return s[3].process(s[2].process(s[1].process(s[0].process(x)))); }
 };
 
-inline double th(double x) { return x > 20 ? 1.0 : (x < -20 ? -1.0 : std::tanh(x)); }
-
-// JFET stage: nearly linear with a square-law even harmonic that levels off, then a knee toward cutoff (lu) / ohmic region (ld)
-inline double jshape(double v, double lu, double ld, double p, double c) {
-    v = v - c * v * v / (1 + std::pow(std::abs(v) / 3, 3));
-    return v > 0 ? v / std::pow(1 + std::pow(v / lu, p), 1 / p) : v / std::pow(1 + std::pow(-v / ld, p), 1 / p);
-}
-
 inline double taperA(double x) { return x <= 0.5 ? 0.2 * x : 0.1 + 1.8 * (x - 0.5); }
 inline double clampd(double x, double lo, double hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
-// Lambert's W (principal branch) from ln z: w + ln w = ln z, Newton steps from the asymptotic guess (exact to rounding)
-inline double lambertW(double lnz) {
-    double w;
-    if (lnz < -2) { const double z = std::exp(lnz); w = z * (1 - z); }
-    else if (lnz < 1.5) w = 0.567 * std::exp(0.6 * lnz);
-    else w = lnz - std::log(lnz);
-    for (int it = 0; it < 5; ++it) w = std::max(w * (1 + lnz - std::log(w)) / (1 + w), 1e-300);
-    return w;
-}
-
 struct Params {
-    double volume = 5, treble = 3, middle = 7, bass = 5, presence = 5, jubilee = 0, sag = 0, master = 6.5;
+    double volume = 5, treble = 3, middle = 7, bass = 5, presence = 5, clip = 0, sag = 0, master = 6.5;
     bool bright = false, shift = false;
     int output = 0;          // 0 = REC (analog cab sim), 1 = AMP (no cab)
     double inputVolts = 1.6; // volts at 0 dBFS
@@ -85,159 +74,181 @@ struct Params {
 class Engine {
 public:
     void prepare(double sampleRate) {
-        srate = sampleRate; FSI = srate * OS; KI = 2 * FSI;
-        GCT = 2 * CT * FSI; GCB = 2 * CBs * FSI; GCM = 2 * CM * FSI;
-        reset(); update(p, true);
+        srate = sampleRate; FSI = srate * OS;
+        aaup.set(18000, FSI); aadn.set(18000, FSI);
+        built = false; update(p, true); reset();
     }
     void reset() {
-        for (Biquad* b : {&q1, &volf, &cc2, &q2, &cc4, &q3, &cc3, &pres, &lhp, &mlb, &mmd, &mtr, &chp, &cp1, &cp2, &clp1, &clp2}) b->reset();
         aaup.reset(); aadn.reset();
-        jct = jcb = jcm = ict = icb = icm = 0; envs = 0;
+        for (auto* b : {&chp, &cp1, &cp2, &clp1, &clp2}) b->reset();
+        // DC operating point of every stage, then each network charged to it
+        q1.settle(); q2.settle(); q3.settle(); l1.settle(); l2.settle(); l34.prepare(FSI); ltp.settle();
+        rN1.initDC(q1.vd0); rN2.initDC(q2.vd0); rN3.initDC(q3.vd0);
+        lN1.initDC(l1.vd0); lN2.initDC(l2.vd0); lN3.initDC(l34.vf0);
+        cpl.initDC(ltp.d20); fb.initDC(0);
+        vout = 0; vposR = vnegR = railRest(); ph = 0;
     }
     void setParams(const Params& np) { if (!(np == p)) update(np, false); }
-
-    // processes a mono buffer in place (input volts scale is applied inside)
-    void process(float* buf, int n) {
-        for (int i = 0; i < n; ++i) buf[i] = (float)tick(buf[i]);
-    }
+    void process(float* buf, int n) { for (int i = 0; i < n; ++i) buf[i] = (float)tick(buf[i]); }
     double tick(double in) {
         const double xin = in * p.inputVolts;
         double ydec = 0;
         for (int k = 0; k < OS; ++k) {
             const double u = aaup.process(k == 0 ? xin * OS : 0.0);
-            const double v1 = jshape(q1.process(u), 6, 10, 6, H2C);
-            const double il = jon ? led(v1, RSRC + rj) : 0.0;
-            double yy;
-            if (p.channel == 0) {
-                const double w = stack(v1 - il * RSRC);
-                const double g2 = cc2.process(volf.process(w));
-                const double v2 = jshape(q2.process(g2), 9, 6.8, 4, 0.01);
-                const double g3 = cc4.process(v2) * 6.8 / 106.8;
-                const double v3 = jshape(q3.process(g3), 9, 6.8, 4, 0.01);
-                double po = pres.process(cc3.process(v3) * 10 / 160);
-                po = 8.3 * th(po / 8.3);
-                const double lp = 1 - (0.06 + sagd * 0.5) * std::min(envs, 1.0);
-                yy = lp * th(po * pdrive / lp);
-            } else {
-                const double la = jshape(LGA * ldrv * (v1 - il * RSRC * 0.5), 9, 6.8, LPA, LCA);
-                double lb = jshape(LGB * lhp.process(la), LBU, LBD, LPB, LCB);
-                lb = lb > 0 ? LLC * th(lb / LLC) : lb;
-                lb = mtr.process(mmd.process(mlb.process(lb)));
-                const double lu = pres.process(lb) * lpdrv;
-                const double lp = 1 - (0.06 + sagd * 0.5) * std::min(envs, 1.0);
-                const double r = lu / lp;
-                yy = lp * r / std::pow(1 + std::pow(std::abs(r), LPP), 1 / LPP);
-            }
-            const double a = std::abs(yy);
-            envs += (a > envs ? att : rel) * (a - envs);
-            double zz;
-            if (p.output == 1) zz = yy;
-            else {
-                double c = chp.process(yy * csc);
-                c = c + a1 * cp1.process(c) + a2 * cp2.process(c);
-                zz = clp2.process(clp1.process(c));
-            }
-            zz = aadn.process(zz);
-            if (k == 0) ydec = zz;
+            const double z = aadn.process(amp(u));
+            if (k == 0) ydec = z;
         }
         return ydec * gout;
     }
 
-private:
-    static constexpr int OS = 8;
-    static constexpr double GM = 0.0009, VT = 0.02585, NLED = 2.0;
-    const double ISLED = 0.01 / std::exp(1.8 / (NLED * VT));
-    static constexpr double RSRC = 55000 + 4700, CT = 250e-12, CBs = 100e-9, CM = 47e-9;
-    static constexpr double LGA = 45.3133, LPA = 5.1334, LCA = 0.0, LGB = 0.3514, LBU = 11.8858, LBD = 1.6598,
-                            LPB = 2.1891, LCB = 0.0, LLC = 8.9370, LLG = 0.02909, LPP = 9.3287, H2C = 0.051;
-
+    // ---------------------------------------------------------------- circuit
+    static constexpr double VPRE = 18;        // preamp supply
+    static constexpr double RL = 8;            // speaker load, ohms
+    static constexpr double GLM = 1 + 22e3 / 5.6e3;   // LM3886 non-inverting gain
+    static constexpr double KREC = 1.0 / 20;   // speaker output to the cab simulator's input (19.1k/1k divider)
+    double CCOMP = 220e-12;                    // compensation capacitor on the pair's output drain
+#ifndef UH20_OS
+#define UH20_OS 8
+#endif
+    static constexpr int OS = UH20_OS;
     Params p;
-    double srate = 48000, FSI = 384000, KI = 768000, GCT = 0, GCB = 0, GCM = 0;
-    Biquad q1, volf, cc2, q2, cc4, q3, cc3, pres, lhp, mlb, mmd, mtr, chp, cp1, cp2, clp1, clp2;
+    double srate = 48000, FSI = 384000;
     Butter8 aaup, aadn;
-    bool jon = false;
-    double rj = 0, pdrive = 1, sagd = 0, ldrv = 1, lpdrv = 1, a1 = 0, a2 = 0, csc = 4.12 / 14.12, att = 0, rel = 0, gout = 1;
-    double envs = 0;
-    // tone stack (6-node nodal model, trapezoidal capacitors)
-    double MI[36] = {}, jct = 0, jcb = 0, jcm = 0, ict = 0, icb = 0, icm = 0;
+    jk::JStage q1, q2, q3, l2;      // rhythm stages; lead cold clipper
+    jk::CSStage l1;                  // lead input stage
+    jk::GainFollower l34;            // lead gain stage + source follower
+    jk::LongTailPair ltp;
+    jk::Network<10> rN1;  // Q1 drain -> 4.7k -> A -> Mark III stack -> Volume (bright) -> 22n -> Q2 gate (1M); A -> 0.47u -> LEDs
+    jk::Network<3> rN2;   // Q2 drain -> 22n -> 100k -> Q3 gate (6.8k)
+    jk::Network<5> rN3;   // Q3 drain -> 100n -> 47k -> Master (1M log) -> 0.1u -> LTP gate (1M)
+    jk::Network<4> lN1;   // J1 drain -> 220n -> 470k || 470p -> Drive (1M log, 1n bright) -> J2 gate
+    jk::Network<3> lN2;   // J2 drain -> 220n -> a (LEDs) -> 470k || 470p -> J3 gate (180k)
+    jk::Network<9> lN3;   // follower -> Marshall stack -> 1.5M -> Master (1M log) -> 0.1u -> LTP gate (1M)
+    jk::Network<2> cpl;   // LTP drain 2 -> 1u -> LM3886 + input (47k)
+    jk::Network<2> fb;    // speaker -> 100k -> LTP gate 2 (4.7k; Presence: 0.1u + 5k)
+    Biquad chp, cp1, cp2, clp1, clp2;
+    double a1 = 0, a2 = 0, csc = 4.12 / 14.12, gout = 1;
+    bool jon = false, built = false; double rj = 1e9, rsup = 0.3, vout = 0, vposR = 30, vnegR = 30, ph = 0;
+    // LEDs: a red LED one way, two in series the other (1.8 V at 10 mA each)
+    static constexpr double NVT1 = 2.0 * jk::VT, NVT2 = 4.0 * jk::VT;
+    const double ISLED = 0.01 / std::exp(1.8 / NVT1), ISLED2 = 0.01 / std::exp(3.6 / NVT2);
+    // supply: 22 V AC secondary (31 V peak), bridge, 4700 uF per rail, LM3886 quiescent 50 mA
+    static constexpr double VPK = 31.1 - 0.9, IQ = 0.05, DROP = 3.0;
+    double CRES = 4700e-6;
+    double railRest() const { return VPK - IQ * rsup * 3; }
 
-    void stackBuild() {
-        double M[36] = {};
-        auto stamp = [&](int a, int b, double g) {
-            if (a >= 0) M[a * 6 + a] += g;
-            if (b >= 0) M[b * 6 + b] += g;
-            if (a >= 0 && b >= 0) { M[a * 6 + b] -= g; M[b * 6 + a] -= g; }
-        };
-        const double t = clampd(p.treble / 10, 0.0004, 0.9996), b = std::max(taperA(p.bass / 10), 0.0004), m = std::max(p.middle / 10, 0.004);
-        stamp(0, -1, 1 / RSRC);
-        stamp(1, 2, 1 / (250000 * (1 - t))); stamp(2, 3, 1 / (250000 * t));
-        stamp(0, 4, 1 / 100000.0); stamp(3, 5, 1 / (250000 * b)); stamp(5, -1, 1 / (25000 * m)); stamp(2, -1, 1 / 1000000.0);
-        stamp(0, 1, GCT); stamp(4, 3, GCB); stamp(4, 5, GCM);
-        double A[72];
-        for (int i = 0; i < 6; ++i) for (int j = 0; j < 6; ++j) { A[i * 12 + j] = M[i * 6 + j]; A[i * 12 + 6 + j] = (i == j); }
-        for (int k = 0; k < 6; ++k) {
-            const double piv = A[k * 12 + k];
-            for (int j = 0; j < 12; ++j) A[k * 12 + j] /= piv;
-            for (int i = 0; i < 6; ++i) if (i != k) { const double f = A[i * 12 + k]; for (int j = 0; j < 12; ++j) A[i * 12 + j] -= f * A[k * 12 + j]; }
+    // rail-to-rail op-amp follower on the 18 V preamp supply (e.g. OPA2197): unity gain, limited at its rails
+    static double buf(double v) { return std::clamp(v, 0.02, VPRE - 0.02); }
+
+    inline double amp(double vin) {
+        double g1raw, g1rout;
+        if (p.channel == 0) {
+            const double g1 = jk::gateClamp(vin, 1e3, q1.vs);
+            const double d1 = q1.tick(g1, [](double) { return 0.0; });   // drain drives an op-amp follower only
+            const double b1 = buf(d1);
+            const double il = jon ? jk::diodeString(rN1.injV(b1), rj + rN1.Zi, ISLED, NVT1, ISLED2, NVT2) : 0.0;
+            const double w = rN1.process(b1, -il);
+            const double d2 = q2.tick(jk::gateClamp(w, rN1.rOut, q2.vs), [&](double vd) { return rN2.portG() * vd - rN2.portJ(); });
+            const double g3 = rN2.process(d2);
+            const double d3 = q3.tick(jk::gateClamp(g3, rN2.rOut, q3.vs), [](double) { return 0.0; });
+            g1raw = rN3.process(buf(d3)); g1rout = rN3.rOut;
+        } else {
+            const double d1 = l1.tick(jk::gateClamp(vin * 56.0 / 103.0, 47e3 * 56e3 / 103e3, l1.vs), 0, 0);   // 47k / 56k input pad
+            const double w = lN1.process(buf(d1));
+            auto led = [&](double vd) { return jon ? jk::diodeString(lN2.injV(vd), rj + lN2.Zi, ISLED, NVT1, ISLED2, NVT2) : 0.0; };
+            const double d2 = l2.tick(jk::gateClamp(w, lN1.rOut, l2.vs), [&](double vd) { return lN2.portG() * vd - lN2.portJi(-led(vd)); });
+            const double g3 = lN2.process(d2, -led(d2));
+            const double s4 = l34.tick(jk::gateClamp(g3, lN2.rOut, l34.a.vs), 0, 0);
+            g1raw = lN3.process(buf(s4)); g1rout = lN3.rOut;
         }
-        for (int i = 0; i < 6; ++i) for (int j = 0; j < 6; ++j) MI[i * 6 + j] = A[i * 12 + 6 + j];
-    }
-    inline double stack(double vs) {
-        double R[6] = {vs / RSRC, 0, 0, 0, 0, 0}, V[6];
-        R[0] += jct; R[1] -= jct; R[4] += jcb; R[3] -= jcb; R[4] += jcm; R[5] -= jcm;
-        for (int i = 0; i < 6; ++i) { double s = 0; for (int j = 0; j < 6; ++j) s += MI[i * 6 + j] * R[j]; V[i] = s; }
-        const double vct = V[0] - V[1], vcb = V[4] - V[3], vcm = V[4] - V[5];
-        ict = GCT * vct - jct; icb = GCB * vcb - jcb; icm = GCM * vcm - jcm;
-        jct = GCT * vct + ict; jcb = GCB * vcb + icb; jcm = GCM * vcm + icm;
-        return V[2];
-    }
-    // LED pair behind the Jubilee pot (one red LED one way, two in series the other): the string voltage x solves
-    // vo = x + rt*Is*(exp(x/nvt)-1). Exactly, x = vo + k - nvt*W(z) with k = rt*Is and ln z = ln(k/nvt) + (vo + k)/nvt
-    // (W: Lambert's function), found from w + ln w = ln z by Newton steps from the asymptotic guess. No memory between samples.
-    inline double led(double vo, double rt) const {
-        const double dir = vo >= 0 ? 1 : -1, nvt = (dir > 0 ? NLED : 2 * NLED) * VT, av = std::abs(vo), k = rt * ISLED;
-        const double x = std::min(av + k - nvt * lambertW(std::log(k / nvt) + (av + k) / nvt), av);
-        return dir * (x / nvt < 30 ? ISLED * std::expm1(x / nvt) : (av - x) / rt);
+        // power section: long-tailed pair (gate 2 = the feedback network's output, from last sample's speaker voltage)
+        const double g1 = jk::gateClamp(g1raw, g1rout, ltp.vt);
+        const double d2 = ltp.tick(g1, fb.outV(vout), cpl.portG(), cpl.portJ());
+        const double vp = cpl.process(d2);
+        // LM3886 into the speaker, limited by its rails (a few volts of dropout)
+        vout = std::clamp(GLM * vp, -(vnegR - DROP), vposR - DROP);
+        fb.process(vout);
+        // rails: full-wave rectified 60 Hz secondary through the supply resistance (winding + Sag) into the reservoirs
+        ph += 60.0 / FSI; if (ph >= 1) ph -= 1;
+        const double vsec = VPK * std::abs(std::sin(2 * kPi * ph)) + 0.9 - 0.9;
+        const double ip = (vout > 0 ? vout / RL : 0) + IQ, in = (vout < 0 ? -vout / RL : 0) + IQ;
+        vposR += ((vsec > vposR ? (vsec - vposR) / rsup : 0) - ip) / (CRES * FSI);
+        vnegR += ((vsec > vnegR ? (vsec - vnegR) / rsup : 0) - in) / (CRES * FSI);
+        // outputs: REC = the speaker voltage through the 1/20 divider into the cab simulator; AMP = the same, uncabbed
+        const double y = vout * KREC;
+        if (p.output == 1) return y;
+        double c = chp.process(y * csc);
+        c = c + a1 * cp1.process(c) + a2 * cp2.process(c);
+        return clp2.process(clp1.process(c));
     }
 
     void update(const Params& np, bool force) {
-        const bool stackChanged = force || np.treble != p.treble || np.middle != p.middle || np.bass != p.bass;
-        p = np;
-        const double KIx = KI;
-        // Q1: J201 at ~0.1 mA, Rd 68k, Rs = 3.3k + 1.5k || 0.68u (Shift adds 22u); Jubilee dual-gang (470k LED gang + click-off, 100k gain gang)
-        const double GM1 = 0.00061, RTH1 = 55000;
-        jon = p.jubilee >= 0.05;
-        rj = 220 + 470000 * taperA(1 - p.jubilee / 10);
-        const double rg = 220 + 100000 * taperA(1 - p.jubilee / 10);
-        const double ru = jon ? 3300 * rg / (3300 + rg) : 3300;
-        const double cb1 = 0.68e-6 + (p.shift ? 22e-6 : 0), tb1 = 1500 * cb1;
-        q1.firstOrder(-GM1 * RTH1, -GM1 * RTH1 * tb1, 1 + GM1 * (ru + 1500), tb1 * (1 + GM1 * ru), KIx);
-        if (stackChanged) stackBuild();
-        // Volume 1M log with an optional 100p bright cap across the upper section
-        const double vv = clampd(taperA(p.volume / 10), 0.0005, 0.9995), rup = 1e6 * (1 - vv), rlo = 1e6 * vv, cbr = p.bright ? 100e-12 : 0;
-        volf.firstOrder(rlo, rlo * rup * cbr, rlo + rup, rlo * rup * cbr, KIx);
-        cc2.firstOrder(0, 22e-9 * 1e6, 1, 22e-9 * 1e6, KIx);
-        q2.firstOrder(-GM * 24700, -GM * 24700 * 2200 * 22e-6, 1 + GM * 2200, 2200 * 22e-6, KIx);
-        cc4.firstOrder(0, 22e-9 * 106800, 1, 22e-9 * 106800, KIx);
-        q3.firstOrder(-GM * 24700, -GM * 24700 * 2200 * 22e-6, 1 + GM * 2200, 2200 * 22e-6, KIx);
-        cc3.firstOrder(0, 100e-9 * 160000, 1, 100e-9 * 160000, KIx);
-        const double rp = 4700 + 50000 * (1 - p.presence / 10);
-        pres.firstOrder(1, 22e-9 * (rp + 10000), 1, 22e-9 * rp, KIx);
-        pdrive = std::pow(10.0, (-3.5 + 3.6 * p.master) / 20);
-        sagd = p.sag / 10;
-        ldrv = std::pow(10.0, (-30 + 4 * p.drive) / 20);
-        lhp.firstOrder(0, 1, 2 * kPi * 106.28, 1, KIx);
-        lpdrv = LLG * std::pow(10.0, (-2 + 3.2 * p.master) / 20);
-        mlb.peak(120, (p.bass - 5) * 2.2, 0.7, FSI);
-        mmd.peak(650, (p.middle - 5) * 1.8 - 2, 0.8, FSI);
-        mtr.peak(2500, (p.treble - 5) * 2.0, 0.7, FSI);
-        aaup.set(18000, FSI); aadn.set(18000, FSI);
-        chp.hp2(98.120, 0.7254, FSI);
-        cp1.bp2(258.815, 1.1821, FSI); a1 = std::pow(10.0, 9.7496 / 20) - 1;
-        cp2.bp2(3002.089, 2.0740, FSI); a2 = std::pow(10.0, 10.6133 / 20) - 1;
-        clp1.lp2(4943.99, 1.0067, FSI); clp2.lp2(4943.99, 1.0067, FSI);
-        att = 1 - std::exp(-1 / (0.015 * FSI)); rel = 1 - std::exp(-1 / (0.12 * FSI));
+        const bool first = !built; p = np; built = true;
+        const double fs = FSI;
+        // ---- rhythm Q1: J201, Rd 68k; source 3.3k (|| Clip gang A: 100k rev-log + 10u) then 1.5k || 0.68u (Shift: + 22u)
+        jon = p.clip >= 0.05;
+        rj = 22 + 47e3 * taperA(1 - p.clip / 10);        // Clip gang B: 47k reverse-log (the 470k original / 10)
+        const double rg = 220 + 100e3 * taperA(1 - p.clip / 10);
+        q1.Vdd = VPRE; q1.Rd = 68e3; q1.src.clear();
+        q1.src.R(0, 1, 3300); if (jon) { q1.src.R(0, 2, rg); q1.src.C(2, 1, 10e-6); } else q1.src.R(0, 2, 1e9);
+        q1.src.R(1, -1, 1500); q1.src.C(1, -1, 0.68e-6 + (p.shift ? 22e-6 : 0)); q1.build(fs);
+        // Q1 drain -> 4.7k -> A; Mark III stack from A (250p, 250k treble, 100k slope, 0.1u, 0.047u, 250k bass, 25k mid); w -> Volume
+        {
+            const double t = clampd(p.treble / 10, 0.0004, 0.9996), b = std::max(taperA(p.bass / 10), 0.0004), m = std::max(p.middle / 10, 0.004);
+            const double vv = clampd(taperA(p.volume / 10), 0.0005, 0.9995);
+            // every pot <= 100k: the network is the original scaled by 1/10 (R) and 10 (C), driven by the drain's follower through
+            // 6.8k (Q1's 68k drain resistance / 10), so its transfer is unchanged
+            auto& n = rN1; n.clear(); n.rs = 6800; n.inj = 9;
+            n.R(0, 1, 470);                           // 1 = A (stack input)
+            if (jon) n.C(1, 9, 4.7e-6); n.R(9, -1, 100e3);   // 9 = the LED string's coupling node (4.7u in, 100k bleeder); Clip 0 switches the branch out
+            n.C(1, 2, 2.5e-9);                        // 2 = treble top
+            n.R(2, 3, 25e3 * (1 - t)); n.R(3, 4, 25e3 * t);     // 3 = treble wiper (w), 4 = treble bottom
+            n.R(1, 5, 10e3);                          // 5 = x (slope)
+            n.C(5, 4, 1e-6); n.R(4, 6, 25e3 * b); n.C(5, 6, 0.47e-6); n.R(6, -1, 2.5e3 * m);   // 6 = mid
+            n.R(3, 7, 100e3 * (1 - vv)); n.R(7, -1, 100e3 * vv); if (p.bright) n.C(3, 7, 1e-9);    // 7 = volume wiper
+            n.C(7, 8, 220e-9); n.R(8, -1, 100e3);     // 8 = Q2 gate
+            n.out = 8; n.build(fs);
+        }
+        q2.Vdd = VPRE; q2.Rd = 47e3; q2.src.clear(); q2.src.R(0, -1, 2200); q2.src.C(0, -1, 22e-6); q2.build(fs);
+        { auto& n = rN2; n.clear(); n.rs = 1; n.C(0, 1, 22e-9); n.R(1, 2, 100e3); n.R(2, -1, 6800); n.out = 2; n.build(fs); }
+        q3.Vdd = VPRE; q3.Rd = 47e3; q3.src.clear(); q3.src.R(0, -1, 2200); q3.src.C(0, -1, 22e-6); q3.build(fs);
+        const double ma = clampd(taperA(p.master / 10), 0.0005, 0.9995);
+        { auto& n = rN3; n.clear(); n.rs = 4700; n.C(0, 1, 1e-6); n.R(1, 2, 4700); n.R(2, -1, 1e9);   // Q3 follower, 47k / 10
+          n.R(2, 3, 100e3 * (1 - ma)); n.R(3, -1, 100e3 * ma); n.C(3, 4, 1e-6); n.R(4, -1, 100e3); n.out = 4; n.build(fs); }
+        // ---- lead (jfet800.cir): J1 27k / 1.5k || 100u; Drive 1M log with 1n bright; J2 56k / 2.2k; LEDs behind it; J3 56k / 1.8k + follower
+        l1.Vdd = VPRE; l1.Rd = 27e3; l1.Rs1 = 0; l1.Rs2 = 1500; l1.Cs = 100e-6; l1.prepare(fs);
+        {
+            const double dv = clampd(taperA(p.drive / 10), 0.0005, 0.9995);
+            auto& n = lN1; n.clear(); n.rs = 2700; n.C(0, 1, 2.2e-6); n.R(1, 2, 47e3); n.C(1, 2, 4.7e-9);   // J1 follower, 27k / 10
+            n.R(2, 3, 100e3 * (1 - dv) + 1); n.R(3, -1, 100e3 * dv + 1); n.C(2, 3, 10e-9); n.out = 3; n.build(fs);
+        }
+        l2.Vdd = VPRE; l2.Rd = 56e3; l2.src.clear(); l2.src.R(0, -1, 2200); l2.build(fs);
+        { auto& n = lN2; n.clear(); n.rs = 1; n.inj = 1; n.C(0, 1, 220e-9); n.R(1, 2, 470e3); n.C(1, 2, 470e-12); n.R(2, -1, 180e3); n.out = 2; n.build(fs); }
+        l34.a.Vdd = VPRE; l34.a.Rd = 56e3; l34.a.Rs1 = 0; l34.a.Rs2 = 1800; l34.a.Cs = 0; l34.Rf = 10e3;
+        {
+            const double t = clampd(p.treble / 10, 0.002, 0.998), b = clampd(taperA(p.bass / 10), 0.001, 0.999), m = clampd(p.middle / 10, 0.002, 0.998);
+            auto& n = lN3; n.clear(); n.rs = 100;   // the follower, buffered (its own ~1k output resistance / 10)
+            n.C(0, 1, 4.7e-9); n.R(1, 2, 22e3 * (1 - t) + 0.1); n.R(2, 3, 22e3 * t + 0.1);   // 2 = treble wiper
+            n.R(0, 4, 3.3e3); n.C(4, 3, 220e-9); n.R(3, 5, 100e3 * b + 0.1); n.C(4, 5, 220e-9); n.R(5, -1, 2.2e3 * m + 5);
+            n.R(2, 8, 150e3);                                                                                   // channel balance
+            n.R(8, 6, 100e3 * (1 - ma) + 0.1); n.R(6, -1, 100e3 * ma + 0.1); n.C(6, 7, 1e-6); n.R(7, -1, 100e3);   // Master, LTP gate
+            n.out = 7; n.build(fs);
+        }
+        // Miller input capacitance of each J201 at its operating point, at its gate node
+        // ---- power: long-tailed pair (J201 x2, 22k drains, 30k tail, +/-15 V), coupling into the LM3886, feedback with Presence
+        { auto& n = cpl; n.clear(); n.rs = 1; n.C(0, -1, CCOMP); n.C(0, 1, 1e-6); n.R(1, -1, 47e3); n.out = 1; n.build(fs); }   // CCOMP: dominant-pole compensation at the pair's output
+        { auto& n = fb; n.clear(); n.rs = 100e3; n.R(0, -1, 4700); n.C(0, 1, 0.1e-6); n.R(1, -1, 5000 * (1 - clampd(p.presence / 10, 0, 1)) + 47); n.out = 0; n.build(fs); }
+        rsup = 0.3 + 2.7 * clampd(p.sag / 10, 0, 1);   // winding + the Sag rheostat in the supply
+        // cab simulator: Sallen-Key high-pass, two MFB band-passes summed in, two Sallen-Key low-passes (active filters on E96 values),
+        // fitted through this circuit at Volume 5, Treble 3, Middle 7, Bass 5, Presence 5, Master 6.5 to the measured studio clean
+        // tone: 1.39 dB rms, 60 Hz - 12.5 kHz
+        chp.hp2(101.090, 1.2775, fs);
+        cp1.bp2(276.845, 1.4134, fs); a1 = std::pow(10.0, 10.5098 / 20) - 1;
+        cp2.bp2(2791.552, 2.7093, fs); a2 = std::pow(10.0, 9.8481 / 20) - 1;
+        clp1.lp2(4855.70, 1.1474, fs); clp2.lp2(4855.70, 1.1474, fs);
         gout = std::pow(10.0, p.trimDb / 20) / (p.output == 1 ? 2.0 : 0.5);
+        if (!first && force) {}
+        (void)force;
     }
 };
 

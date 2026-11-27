@@ -2,9 +2,9 @@
 02 Rhythm - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright|channel=0 volume=3 treble=5 middle=6 bass=4 presence=5 master=6.5 bright=1
 03 Rhythm - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5|channel=0 volume=7 treble=4 middle=7 bass=5 presence=6 master=7.5
 04 Rhythm - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7|channel=0 volume=8 treble=4 middle=7 bass=5 presence=6 master=8 sag=7
-05 Rhythm - volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5|channel=0 volume=6 treble=4 middle=7 bass=5 presence=6 master=7 jubilee=5
+05 Rhythm - volume 6, treble 4, middle 7, bass 5, presence 6, master 7, clip 5|channel=0 volume=6 treble=4 middle=7 bass=5 presence=6 master=7 clip=5
 06 Lead - drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5|channel=1 drive=3 treble=5 middle=6 bass=5 presence=5 master=6.5
 07 Lead - drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5|channel=1 drive=5 treble=5 middle=6 bass=5 presence=5 master=6.5
-08 Lead - drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4|channel=1 drive=7 treble=5 middle=7 bass=4 presence=6 master=6.5 jubilee=4
+08 Lead - drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, clip 4|channel=1 drive=7 treble=5 middle=7 bass=4 presence=6 master=6.5 clip=4
 09 Lead - drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5|channel=1 drive=9 treble=6 middle=6 bass=5 presence=7 master=7 sag=5
 10 Lead - drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift|channel=1 drive=6 treble=6 middle=5 bass=6 presence=5 master=6.5 shift=1

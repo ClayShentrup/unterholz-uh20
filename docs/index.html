@@ -15,12 +15,18 @@ code{background:#cfccc1;padding:2px 6px}
 ol.smp{list-style:none;padding:0;margin:0}ol.smp li{display:flex;gap:14px;border-top:1px solid #b3b0a6;padding:12px 0}
 ol.smp .n{font-weight:700;color:var(--or);min-width:2ch}ol.smp .t{flex:1;min-width:0}ol.smp span{color:var(--mut)}
 audio{display:block;width:100%;margin-top:8px}h2{letter-spacing:.2em;font-size:16px;margin:36px 0 6px}label{color:var(--mut);font-size:14px}
+pre{background:rgba(127,127,127,.12);padding:10px 14px;overflow-x:auto}
 </style></head><body>
 <header><h1>UNTERHOLZ</h1><p>UH-20 &nbsp; JFET-VORVERST&Auml;RKER &nbsp;/&nbsp; OPEN HARDWARE</p></header>
 <main>
 <img src="screenshot.png" alt="The UH-20 plugin panel">
-<p>A JFET guitar preamp published as an open circuit, with a plugin that simulates that circuit. Clean channel: glassy, studio-preamp style. Lead channel: Marshall-style crunch to saturation. Supply sag, an LED clipper and an analog cab-sim output.</p>
+<p>A JFET guitar preamp published as an open circuit, with a plugin that simulates that circuit part by part. Clean channel: glassy, studio-preamp style. Lead channel: Marshall-style crunch to saturation. Both drive a class AB power section (a J201 long-tailed pair into an LM3886) whose feedback carries Presence and whose supply resistance is Sag.</p>
 <a class="btn" href="https://github.com/ClayShentrup/unterholz-uh20/releases/latest">Download (VST3 / AU / CLAP / app)</a>
+<p>On a Mac with <a href="https://brew.sh">Homebrew</a>:</p>
+<pre><code>brew tap clayshentrup/tap
+brew trust clayshentrup/tap
+brew install --cask unterholz-uh20</code></pre>
+<p>The installer package asks for your Mac password.</p>
 <a class="btn" href="https://github.com/ClayShentrup/unterholz-uh20">Source and schematics</a>
 
 <section id="samples"><h2>SAMPLES</h2>
@@ -31,10 +37,10 @@ audio{display:block;width:100%;margin-top:8px}h2{letter-spacing:.2em;font-size:1
 <li><div class="n">02</div><div class="t"><b>Rhythm</b> <span>volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright</span><audio controls preload="none" src="samples/02%20Rhythm%20-%20volume%203%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%205%2C%20master%206.5%2C%20bright.opus"></audio></div></li>
 <li><div class="n">03</div><div class="t"><b>Rhythm</b> <span>volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5</span><audio controls preload="none" src="samples/03%20Rhythm%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207.5.opus"></audio></div></li>
 <li><div class="n">04</div><div class="t"><b>Rhythm</b> <span>volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7</span><audio controls preload="none" src="samples/04%20Rhythm%20-%20volume%208%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%208%2C%20sag%207.opus"></audio></div></li>
-<li><div class="n">05</div><div class="t"><b>Rhythm</b> <span>volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5</span><audio controls preload="none" src="samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20jubilee%205.opus"></audio></div></li>
+<li><div class="n">05</div><div class="t"><b>Rhythm</b> <span>volume 6, treble 4, middle 7, bass 5, presence 6, master 7, clip 5</span><audio controls preload="none" src="samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20clip%205.opus"></audio></div></li>
 <li><div class="n">06</div><div class="t"><b>Lead</b> <span>drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5</span><audio controls preload="none" src="samples/06%20Lead%20-%20drive%203%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.opus"></audio></div></li>
 <li><div class="n">07</div><div class="t"><b>Lead</b> <span>drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5</span><audio controls preload="none" src="samples/07%20Lead%20-%20drive%205%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.opus"></audio></div></li>
-<li><div class="n">08</div><div class="t"><b>Lead</b> <span>drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4</span><audio controls preload="none" src="samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20jubilee%204.opus"></audio></div></li>
+<li><div class="n">08</div><div class="t"><b>Lead</b> <span>drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, clip 4</span><audio controls preload="none" src="samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20clip%204.opus"></audio></div></li>
 <li><div class="n">09</div><div class="t"><b>Lead</b> <span>drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5</span><audio controls preload="none" src="samples/09%20Lead%20-%20drive%209%2C%20treble%206%2C%20middle%206%2C%20bass%205%2C%20presence%207%2C%20master%207%2C%20sag%205.opus"></audio></div></li>
 <li><div class="n">10</div><div class="t"><b>Lead</b> <span>drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift</span><audio controls preload="none" src="samples/10%20Lead%20-%20drive%206%2C%20treble%206%2C%20middle%205%2C%20bass%206%2C%20presence%205%2C%20master%206.5%2C%20bass%20shift.opus"></audio></div></li>
 </ol></section>

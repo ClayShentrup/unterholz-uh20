@@ -20,7 +20,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout UH20Processor::createLayout(
     knob("middle", "Middle", 7.f);
     knob("bass", "Bass", 5.f);
     knob("presence", "Presence", 5.f);
-    knob("jubilee", "Jubilee (LED clip)", 0.f);
+    knob("jubilee", "Clip", 0.f);   // ID kept from v0.1 ("jubilee") so saved sessions load
     knob("sag", "Sag", 0.f);
     knob("master", "Master", 6.5f);
     l.add(std::make_unique<AudioParameterChoice>(ParameterID{"channel", 1}, "Channel", StringArray{"Rhythm", "Lead"}, 0));
@@ -36,7 +36,7 @@ uh20::Params UH20Processor::readParams() const {
     auto v = [&](const char* id) { return (double)apvts.getRawParameterValue(id)->load(); };
     uh20::Params p;
     p.volume = v("volume"); p.drive = v("drive"); p.treble = v("treble"); p.middle = v("middle"); p.bass = v("bass");
-    p.presence = v("presence"); p.jubilee = v("jubilee"); p.sag = v("sag"); p.master = v("master");
+    p.presence = v("presence"); p.clip = v("jubilee"); p.sag = v("sag"); p.master = v("master");
     p.channel = (int)v("channel"); p.bright = v("bright") > 0.5; p.shift = v("shift") > 0.5;
     p.output = (int)v("output"); p.inputVolts = v("involts"); p.trimDb = v("trim");
     return p;

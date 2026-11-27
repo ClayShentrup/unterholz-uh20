@@ -44,8 +44,8 @@ Panel::Panel(AudioProcessorValueTreeState& state) : apvts(state) {
         {"middle", "MITTEN", "middle", "MITTEN (middle): midrange body. In LEAD it works after the distortion, so it shapes the crunch without changing the gain."},
         {"bass", "TIEFEN", "bass", "TIEFEN (bass): low end. In RHYTHMUS keep it at 5 or below; above that the low end gets loose."},
         {"presence", "PRÄSENZ", "presence", "PRAESENZ (presence): upper-mid bite from the power stage's feedback loop. 0 = smooth and dark, 10 = cutting."},
-        {"jubilee", "JUBILÄUM", "LED clip", "JUBILAEUM (LED clip): LED clipping before the tone stack. 0 = off. Higher = smoother, lopsided clipping, same loudness."},
-        {"sag", "DURCHHANG", "sag", "DURCHHANG (sag): power-supply sag. Higher = hard chords squash right after the pick, then bloom back over about a tenth of a second."},
+        {"jubilee", "CLIP", "LED clip", "CLIP: LEDs clip the peaks: flatter tops, more squash and sustain, and thicker because the clipping is asymmetric. 0 = off."},
+        {"sag", "DURCHHANG", "sag", "DURCHHANG (sag): resistance in the power supply. Higher = the rails droop under hard chords, so loud notes squash and then bloom back as the capacitors recharge."},
         {"master", "SUMME", "master", "SUMME (master): drive into the power stage. RHYTHMUS: 6.5 = the studio clean tone. LEAD: higher = more power-amp crunch."},
     };
     int i = 0;

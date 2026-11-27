@@ -20,6 +20,8 @@ struct Network {
     int out = N - 1, K = 0, ri[KMAX] = {};
     double A[KMAX * KMAX] = {}, Bv[KMAX] = {}, Cv[KMAX] = {}, D = 0, st[KMAX] = {};
     double P0[KMAX] = {}, PD = 0, rOut = 0;   // node-0 voltage = PD vs + P0.st (for the current drawn); Thevenin resistance at out
+    // current injection at node 'inj' (into the node): its effect on the state, the output, node 0 and the node itself
+    int inj = -1; double Ei[KMAX] = {}, Yi = 0, Pi = 0, Zi = 0, Vi_vs = 0, Qi[KMAX] = {};
     void clear() { for (int k = 0; k < K; ++k) el[(size_t)ri[k]].s = st[k]; old = el; el.clear(); }
     void R(int a, int b, double r) { el.push_back({a, b, 0, r}); }
     void C(int a, int b, double c) { el.push_back({a, b, 1, c}); }
@@ -31,7 +33,7 @@ struct Network {
             if (b >= 0) M[b * N + b] += g;
             if (a >= 0 && b >= 0) { M[a * N + b] -= g; M[b * N + a] -= g; }
         };
-        stamp(0, -1, 1 / rs);
+        if (rs > 0) stamp(0, -1, 1 / rs);
         K = 0;
         std::vector<bool> used(old.size(), false);
         for (size_t n = 0; n < el.size(); ++n) {
@@ -56,8 +58,9 @@ struct Network {
         for (int i = 0; i < N; ++i) for (int j = 0; j < N; ++j) MI[i * N + j] = Ag[i * 2 * N + N + j];
         // node voltages for a unit source or a unit history current, then each part's next history current
         auto nodes = [&](double vs, int kUnit, double* V) {
-            double rhs[N] = {}; rhs[0] = vs / rs;
-            if (kUnit >= 0) { const auto& e = el[(size_t)ri[kUnit]]; if (e.a >= 0) rhs[e.a] -= 1; if (e.b >= 0) rhs[e.b] += 1; }
+            double rhs[N] = {}; if (rs > 0) rhs[0] = vs / rs;
+            if (kUnit == -2) { rhs[inj] += 1; }
+            else if (kUnit >= 0) { const auto& e = el[(size_t)ri[kUnit]]; if (e.a >= 0) rhs[e.a] -= 1; if (e.b >= 0) rhs[e.b] += 1; }
             for (int i = 0; i < N; ++i) { double t = 0; for (int j = 0; j < N; ++j) t += MI[i * N + j] * rhs[j]; V[i] = t; }
         };
         auto next = [&](const double* V, int j, double sj) {
@@ -69,25 +72,28 @@ struct Network {
         nodes(1, -1, V); D = V[out]; PD = V[0];
         { double rhs[N] = {}; rhs[out] = 1; double Vi[N]; for (int i = 0; i < N; ++i) { double t = 0; for (int j = 0; j < N; ++j) t += MI[i * N + j] * rhs[j]; Vi[i] = t; } rOut = Vi[out]; }
         for (int j = 0; j < K; ++j) Bv[j] = next(V, j, 0);
+        if (inj >= 0) Vi_vs = V[inj];
         for (int k = 0; k < K; ++k) {
-            nodes(0, k, V); Cv[k] = V[out]; P0[k] = V[0];
+            nodes(0, k, V); Cv[k] = V[out]; P0[k] = V[0]; if (inj >= 0) Qi[k] = V[inj];
             for (int j = 0; j < K; ++j) A[j * KMAX + k] = next(V, j, j == k ? 1 : 0);
         }
+        if (inj >= 0) { nodes(0, -2, V); Yi = V[out]; Pi = V[0]; Zi = V[inj]; for (int j = 0; j < K; ++j) Ei[j] = next(V, j, 0); }
         for (int k = 0; k < K; ++k) st[k] = el[(size_t)ri[k]].s;
     }
     void reset() { for (auto& e : el) e.s = 0; for (auto& x : st) x = 0; }
     // start at the DC operating point for a source held at vsDC: capacitors charged (open), inductors carrying their current
     // (short); a capacitor's history current is then -g v, an inductor's +i
-    void initDC(double vsDC) {
+    void initDC(double vsDC, double iInjDC = 0) {
         double M[N * N] = {}, rhs[N] = {};
         auto stamp = [&](int a, int b, double g) {
             if (a >= 0) M[a * N + a] += g;
             if (b >= 0) M[b * N + b] += g;
             if (a >= 0 && b >= 0) { M[a * N + b] -= g; M[b * N + a] -= g; }
         };
-        stamp(0, -1, 1 / rs); rhs[0] = vsDC / rs;
+        if (rs > 0) { stamp(0, -1, 1 / rs); rhs[0] = vsDC / rs; }
         for (int i = 0; i < N; ++i) M[i * N + i] += 1e-12;
         for (auto& e : el) { if (e.type == 0) stamp(e.a, e.b, 1 / e.val); else if (e.type == 2) stamp(e.a, e.b, 1e6); }
+        if (inj >= 0) rhs[inj] += iInjDC;
         for (int k = 0; k < N; ++k) {   // Gaussian elimination with partial pivoting
             int pr = k; for (int i = k + 1; i < N; ++i) if (std::abs(M[i * N + k]) > std::abs(M[pr * N + k])) pr = i;
             if (pr != k) { for (int j = 0; j < N; ++j) std::swap(M[k * N + j], M[pr * N + j]); std::swap(rhs[k], rhs[pr]); }
@@ -102,6 +108,17 @@ struct Network {
     // current drawn from the source vs (through rs) this sample, before process(): i = (vs - V0)/rs, linear in vs
     inline double portG() const { return (1 - PD) / rs; }                      // d i / d vs
     inline double portJ() const { double v = 0; for (int k = 0; k < K; ++k) v += P0[k] * st[k]; return v / rs; }   // i = portG vs - portJ
+    // with an injection node: its voltage before this sample's injection, its resistance, and the step with injection i
+    inline double injV(double vs) const { double v = Vi_vs * vs; for (int k = 0; k < K; ++k) v += Qi[k] * st[k]; return v; }
+    inline double portJi(double i) const { return portJ() + Pi * i / rs; }   // port current with injection: G vs - portJi(i)
+    inline double outV(double vs, double i = 0) const { double y = D * vs + Yi * i; for (int k = 0; k < K; ++k) y += Cv[k] * st[k]; return y; }
+    inline double process(double vs, double i) {
+        double y = D * vs + Yi * i, ns[KMAX];
+        for (int k = 0; k < K; ++k) y += Cv[k] * st[k];
+        for (int j = 0; j < K; ++j) { double t = Bv[j] * vs + Ei[j] * i; for (int k = 0; k < K; ++k) t += A[j * KMAX + k] * st[k]; ns[j] = t; }
+        for (int j = 0; j < K; ++j) st[j] = ns[j];
+        return y;
+    }
     inline double process(double vs) {
         double y = D * vs, ns[KMAX];
         for (int k = 0; k < K; ++k) y += Cv[k] * st[k];
@@ -156,21 +173,78 @@ inline void unbypassed(double vg, double vdd, double rd, double rs, double& vd, 
     vs = 0.5 * (lo + hi); vd = rd > 0 ? drainVoltage(vg - vs, vs, vdd, rd) : vdd;
 }
 
+// ---------------------------------------------------------------- solvers
+inline long& unconverged() { static long n = 0; return n; }   // solves that ran out of iterations (tests check this stays 0)
+inline long* unconvergedBy() { static long n[4] = {}; return n; }   // 0 stage, 1 pair, 2 gate clamp, 3 other
+
+// Newton for n <= 4 unknowns with a numeric Jacobian and limited voltage steps; returns the final residual norm
+template <int n, class F> double newton(F&& f, double* x, const double* scale, int maxIt = 40, double tol = 1e-11, bool count = true) {
+    double r[n], r2[n], Jm[n * n], nrm = 0;
+    for (int it = 0; it < maxIt; ++it) {
+        f(x, r); nrm = 0; for (int i = 0; i < n; ++i) nrm = std::max(nrm, std::abs(r[i]));
+        if (nrm < tol) return nrm;
+        for (int j = 0; j < n; ++j) { double y[n]; for (int k = 0; k < n; ++k) y[k] = x[k]; const double h = 1e-7 * scale[j]; y[j] += h; f(y, r2); for (int i = 0; i < n; ++i) Jm[i * n + j] = (r2[i] - r[i]) / h; }
+        double a[n * (n + 1)];   // Gaussian elimination on [J | -r]
+        for (int i = 0; i < n; ++i) { for (int j = 0; j < n; ++j) a[i * (n + 1) + j] = Jm[i * n + j]; a[i * (n + 1) + n] = -r[i]; }
+        for (int k = 0; k < n; ++k) {
+            int p = k; for (int i = k + 1; i < n; ++i) if (std::abs(a[i * (n + 1) + k]) > std::abs(a[p * (n + 1) + k])) p = i;
+            if (p != k) for (int j = 0; j <= n; ++j) std::swap(a[k * (n + 1) + j], a[p * (n + 1) + j]);
+            if (a[k * (n + 1) + k] == 0) return nrm;
+            for (int i = k + 1; i < n; ++i) { const double q = a[i * (n + 1) + k] / a[k * (n + 1) + k]; for (int j = k; j <= n; ++j) a[i * (n + 1) + j] -= q * a[k * (n + 1) + j]; }
+        }
+        double dx[n]; for (int i = n - 1; i >= 0; --i) { double t = a[i * (n + 1) + n]; for (int j = i + 1; j < n; ++j) t -= a[i * (n + 1) + j] * dx[j]; dx[i] = t / a[i * (n + 1) + i]; }
+        double lim = 1; for (int i = 0; i < n; ++i) { const double m = std::abs(dx[i]) / (2 * scale[i]); if (m > lim) lim = m; }
+        for (int i = 0; i < n; ++i) x[i] += dx[i] / lim;
+    }
+    if (count) ++unconverged();
+    f(x, r); nrm = 0; for (int i = 0; i < n; ++i) nrm = std::max(nrm, std::abs(r[i]));
+    return nrm;
+}
+
+// bracketed Newton for a strictly monotone residual f on [lo, hi] (f(lo), f(hi) of opposite signs); x is the start
+template <class F> inline double solve1(F&& f, double lo, double hi, double x, double tol, double h) {
+    double flo = f(lo); const bool inc = flo < 0;   // increasing if f(lo) < 0
+    x = std::clamp(x, lo, hi);
+    for (int it = 0; it < 80; ++it) {
+        const double fx = f(x);
+        if (std::abs(fx) < 1e-16) return x;
+        if ((fx < 0) == inc) lo = x; else hi = x;
+        if (hi - lo < tol) return 0.5 * (lo + hi);
+        const double d = (f(x + h) - fx) / h;
+        double n = d != 0 ? x - fx / d : 0.5 * (lo + hi);
+        if (!(n > lo && n < hi)) n = 0.5 * (lo + hi);
+        if (std::abs(n - x) < tol) return n;
+        x = n;
+    }
+    ++unconverged(); ++unconvergedBy()[3];
+    return x;
+}
+
+// a string of diodes/LEDs (saturation current is, emission voltage nvt) in series with rt, from a source voc: the exact current
+// (Lambert's W: x = voc + k - nvt W(z), k = rt is, ln z = ln(k/nvt) + (voc + k)/nvt). Asymmetric strings take (isUp, nvtUp) for
+// positive voc and (isDn, nvtDn) for negative.
+inline double lambertW(double lnz) {
+    double w;
+    if (lnz < -2) { const double z = std::exp(lnz); w = z * (1 - z); }
+    else if (lnz < 1.5) w = 0.567 * std::exp(0.6 * lnz);
+    else w = lnz - std::log(lnz);
+    for (int it = 0; it < 5; ++it) w = std::max(w * (1 + lnz - std::log(w)) / (1 + w), 1e-300);
+    return w;
+}
+inline double diodeString(double voc, double rt, double isUp, double nvtUp, double isDn, double nvtDn) {
+    const bool up = voc >= 0; const double is = up ? isUp : isDn, nvt = up ? nvtUp : nvtDn, av = std::abs(voc), k = rt * is;
+    const double x = std::min(av + k - nvt * lambertW(std::log(k / nvt) + (av + k) / nvt), av);
+    const double i = x / nvt < 30 ? is * std::expm1(x / nvt) : (av - x) / rt;
+    return up ? i : -i;
+}
+
 // ---------------------------------------------------------------- gate conduction
 // a gate fed from a Thevenin source (vth, rth): the J201 gate junction conducts once forward-biased against the source.
 // Solve (vth - vg)/rth = Ig(vg - vs) by bracketed Newton (monotone; always converges).
 inline double gateClamp(double vth, double rth, double vs) {
     if (J201::ig(vth - vs) * rth < 1e-9) return vth;
-    double lo = std::min(vth, vs) - 1, hi = vth, g = std::max(lo, std::min(hi, vs + 0.5));
-    for (int it = 0; it < 80; ++it) {
-        const double fv = (vth - g) / rth - J201::ig(g - vs);
-        if (fv > 0) lo = g; else hi = g;
-        const double h = 1e-7, df = ((vth - g - h) / rth - J201::ig(g + h - vs) - fv) / h;
-        double n = df != 0 ? g - fv / df : 0.5 * (lo + hi); if (!(n > lo && n < hi)) n = 0.5 * (lo + hi);
-        if (std::abs(n - g) < 1e-12) return n;
-        g = n;
-    }
-    return g;
+    // (vth - g)/rth - Ig(g - vs) falls as g rises
+    return solve1([&](double g) { return (vth - g) / rth - J201::ig(g - vs); }, std::min(vth, vs) - 1, vth, std::min(vth, vs + 0.5), 1e-10, 1e-7);
 }
 
 // ---------------------------------------------------------------- circuit blocks, solved exactly every sample
@@ -250,33 +324,86 @@ struct GainFollower {
     }
     inline double tick(double vg, double G, double J) {
         const double gr = 1 / a.Rs2, reff = a.Rs1 + 1 / (gr + a.gc), voff = a.jc / (gr + a.gc);
+        double I = a.id, vd = a.vd, sf = vf;
         auto F = [&](const double* x, double* f) {
-            const double I = x[0], vd = x[1], s = x[2], vs = reff * I + voff;
-            const double ig = J201::ig(vd - s);
-            f[0] = J201::id(vg - vs, vd - vs) - I;                          // gain stage law
-            f[1] = (a.Vdd - vd) / a.Rd - I - ig;                             // drain node KCL
-            f[2] = J201::id(vd - s, a.Vdd - s) + ig - s / Rf - (G * s - J);   // follower source KCL
+            const double vs = reff * x[0] + voff, ig = J201::ig(x[1] - x[2]);
+            f[0] = (J201::id(vg - vs, x[1] - vs) - x[0]) * 1e4;
+            f[1] = ((a.Vdd - x[1]) / a.Rd - x[0] - ig) * 1e4;
+            f[2] = (J201::id(x[1] - x[2], a.Vdd - x[2]) + ig - x[2] / Rf - (G * x[2] - J)) * 1e4;
         };
-        double x[3] = {a.id, a.vd, vf}, f[3];
-        for (int it = 0; it < 40; ++it) {
-            F(x, f); const double nrm = std::abs(f[0]) * 1e4 + std::abs(f[1]) * 1e4 + std::abs(f[2]) * 1e4;
-            if (nrm < 1e-12) break;
-            double Jm[9];
-            for (int j = 0; j < 3; ++j) { double y[3] = {x[0], x[1], x[2]}, g[3]; const double h = j == 0 ? 1e-10 : 1e-7; y[j] += h; F(y, g); for (int i = 0; i < 3; ++i) Jm[i * 3 + j] = (g[i] - f[i]) / h; }
-            // solve Jm dx = -f (3x3, Cramer)
-            const double det = Jm[0] * (Jm[4] * Jm[8] - Jm[5] * Jm[7]) - Jm[1] * (Jm[3] * Jm[8] - Jm[5] * Jm[6]) + Jm[2] * (Jm[3] * Jm[7] - Jm[4] * Jm[6]);
-            if (det == 0) break;
-            double dx[3];
-            for (int c = 0; c < 3; ++c) { double M[9]; for (int k = 0; k < 9; ++k) M[k] = Jm[k]; for (int r = 0; r < 3; ++r) M[r * 3 + c] = -f[r];
-                dx[c] = (M[0] * (M[4] * M[8] - M[5] * M[7]) - M[1] * (M[3] * M[8] - M[5] * M[6]) + M[2] * (M[3] * M[7] - M[4] * M[6])) / det; }
-            // limit the voltage steps (the junction exponentials) so Newton cannot overshoot
-            double lim = 1; const double mx = std::max(std::abs(dx[1]), std::abs(dx[2])); if (mx > 0.5) lim = 0.5 / mx;
-            for (int k = 0; k < 3; ++k) x[k] += lim * dx[k];
-            x[0] = std::max(x[0], 0.0);
+        double x[3] = {I, vd, sf}; const double sc[3] = {1e-4, 1.0, 1.0};
+        if (!(newton<3>(F, x, sc, 12, 1e-11, false) < 1e-11 && x[0] >= 0)) {
+            // robust path: for a drain voltage, J3's current and the follower's source are each a monotone 1-D solve; the drain
+            // node's KCL then falls as the drain voltage rises
+            double iL = I, sL = sf;
+            auto Iof = [&](double v) { iL = solve1([&](double i) { const double vs = reff * i + voff; return J201::id(vg - vs, v - vs) - i; }, 0.0, 4e-3, iL, 1e-14, 1e-11); return iL; };
+            auto Sof = [&](double v) { sL = solve1([&](double t) { return J201::id(v - t, a.Vdd - t) + J201::ig(v - t) - t / Rf - (G * t - J); }, -5.0, a.Vdd + 5, sL, 1e-10, 1e-6); return sL; };
+            x[1] = solve1([&](double v) { return (a.Vdd - v) / a.Rd - Iof(v) - J201::ig(v - Sof(v)); }, -5.0, a.Vdd + 5, vd, 1e-10, 1e-6);
+            x[0] = Iof(x[1]); x[2] = Sof(x[1]);
         }
-        a.id = x[0]; a.vd = x[1]; vf = x[2]; a.vs = reff * x[0] + voff;
-        a.vc = (x[0] + a.jc) / (gr + a.gc); const double ic = a.gc * a.vc - a.jc; a.jc = a.gc * a.vc + ic;
+        a.id = std::max(x[0], 0.0); a.vd = x[1]; vf = x[2]; a.vs = reff * a.id + voff;
+        a.vc = (a.id + a.jc) / (gr + a.gc); const double ic = a.gc * a.vc - a.jc; a.jc = a.gc * a.vc + ic;
         return vf;
+    }
+};
+
+// A J201 common-source stage with any source network (driven by the source current, Network with rs = 0, inj = 0) and any
+// drain load given as a current function load(vd). Unknowns: drain current I, drain voltage vd; solved by Newton every sample.
+struct JStage {
+    double Vdd = 18, Rd = 47e3, id = 0, vd = 0, vs = 0, vd0 = 0;
+    Network<3> src;
+    void build(double fs) { src.rs = 0; src.inj = 0; src.out = 0; src.build(fs); }
+    double vsFor(double I) const { return src.injV(0) + src.Zi * I; }
+    void settle() {   // DC: capacitors open, no drain load current
+        double lo = 0, hi = Vdd / Rd;
+        for (int it = 0; it < 70; ++it) { const double m = 0.5 * (lo + hi); src.initDC(0, m); const double sv = vsFor(m), d = Vdd - Rd * m;
+            if (J201::id(-sv, d - sv) > m) lo = m; else hi = m; }
+        id = 0.5 * (lo + hi); src.initDC(0, id); vs = vsFor(id); vd = vd0 = Vdd - Rd * id;
+    }
+    template <class L> inline double tick(double vg, L&& load) {
+        {   // fast path: Newton on (I, vd) from last sample's solution
+            double x[2] = {id, vd}; const double sc[2] = {1e-4, 1.0};
+            auto F = [&](const double* y, double* r) { const double sv = vsFor(y[0]); r[0] = (J201::id(vg - sv, y[1] - sv) - y[0]) * 1e4; r[1] = ((Vdd - y[1]) / Rd - y[0] - load(y[1])) * 1e4; };
+            if (newton<2>(F, x, sc, 12, 1e-11, false) < 1e-11 && x[0] >= 0) { id = x[0]; vd = x[1]; vs = vsFor(id); src.process(0, id); return vd; }
+        }
+        // robust path: drain node for a given current: (Vdd - vd)/Rd - I - load(vd) falls as vd rises
+        double vdLast = vd;
+        auto vdOf = [&](double I) {
+            vdLast = solve1([&](double v) { return (Vdd - v) / Rd - I - load(v); }, -60.0, Vdd + 60, vdLast, 1e-10, 1e-6);
+            return vdLast;
+        };
+        // stage law: id(vg - vs(I), vd(I) - vs(I)) - I falls as I rises
+        const double imax = std::max(4 * J201::Beta * J201::Vto * J201::Vto, Vdd / Rd) * 4 + 1e-3;
+        const double I = solve1([&](double i) { const double sv = vsFor(i), d = vdOf(i); return J201::id(vg - sv, d - sv) - i; }, 0.0, imax, id, 1e-14, 1e-11);
+        id = std::max(I, 0.0); vd = vdOf(id); vs = vsFor(id); src.process(0, id);
+        return vd;
+    }
+};
+
+// J201 long-tailed pair: both sources on a tail resistor to Vn, drains on Rd from Vp; drain 2 carries a load (port G, J).
+// Unknowns: tail voltage, the two drain currents. Output: drain 2 (non-inverting from gate 1, inverting from gate 2).
+struct LongTailPair {
+    double Vp = 15, Vn = -15, Rd = 22e3, Rt = 30e3, vt = 0, i1 = 0, i2 = 0, d2 = 0, d20 = 0;
+    void settle() {
+        double x[3] = {-0.2, 2.5e-4, 2.5e-4}; const double sc[3] = {1.0, 1e-4, 1e-4};
+        auto F = [&](const double* y, double* r) { const double d1 = Vp - Rd * y[1], dd = Vp - Rd * y[2];
+            r[0] = (J201::id(-y[0], d1 - y[0]) - y[1]) * 1e4; r[1] = (J201::id(-y[0], dd - y[0]) - y[2]) * 1e4; r[2] = (y[1] + y[2] - (y[0] - Vn) / Rt) * 1e4; };
+        newton<3>(F, x, sc, 200); vt = x[0]; i1 = x[1]; i2 = x[2]; d2 = d20 = Vp - Rd * i2;
+    }
+    inline double tick(double g1, double g2, double G, double J) {
+        const double gd = 1 / Rd + G, imax = 4e-3;
+        {   // fast path
+            double x[3] = {vt, i1, i2}; const double sc[3] = {1.0, 1e-4, 1e-4};
+            auto F = [&](const double* y, double* r) { const double d1 = Vp - Rd * y[1], dd = (Vp / Rd + J - y[2]) / gd;
+                r[0] = (J201::id(g1 - y[0], d1 - y[0]) - y[1]) * 1e4; r[1] = (J201::id(g2 - y[0], dd - y[0]) - y[2]) * 1e4; r[2] = (y[1] + y[2] - (y[0] - Vn) / Rt) * 1e4; };
+            if (newton<3>(F, x, sc, 12, 1e-11, false) < 1e-11 && x[1] >= 0 && x[2] >= 0) { vt = x[0]; i1 = x[1]; i2 = x[2]; d2 = (Vp / Rd + J - i2) / gd; return d2; }
+        }
+        // each side's current for a given tail voltage (monotone in the current), then the tail (monotone in vt)
+        auto I1 = [&](double t) { i1 = solve1([&](double i) { return J201::id(g1 - t, Vp - Rd * i - t) - i; }, 0.0, imax, i1, 1e-14, 1e-11); return i1; };
+        auto I2 = [&](double t) { i2 = solve1([&](double i) { const double dd = (Vp / Rd + J - i) / gd; return J201::id(g2 - t, dd - t) - i; }, 0.0, imax, i2, 1e-14, 1e-11); return i2; };
+        vt = solve1([&](double t) { return I1(t) + I2(t) - (t - Vn) / Rt; }, Vn, Vp, vt, 1e-10, 1e-6);
+        I1(vt); I2(vt); d2 = (Vp / Rd + J - i2) / gd;
+        return d2;
     }
 };
 

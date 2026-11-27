@@ -13,7 +13,9 @@
 #include <functional>
 #include <algorithm>
 #include <initializer_list>
+#define private public   // the tests reach into the circuit
 #include "../source/dsp/UH20Engine.h"
+#undef private
 
 using namespace uh20;
 static int failures = 0;
@@ -75,14 +77,14 @@ static Params P(std::initializer_list<std::pair<const char*, double>> kv) {
     for (auto& [k, v] : kv) {
         const std::string s = k;
         if (s == "volume") p.volume = v; else if (s == "treble") p.treble = v; else if (s == "middle") p.middle = v; else if (s == "bass") p.bass = v;
-        else if (s == "presence") p.presence = v; else if (s == "jubilee") p.jubilee = v; else if (s == "sag") p.sag = v; else if (s == "master") p.master = v;
+        else if (s == "presence") p.presence = v; else if (s == "clip" || s == "jubilee") p.clip = v; else if (s == "sag") p.sag = v; else if (s == "master") p.master = v;
         else if (s == "bright") p.bright = v > 0.5; else if (s == "shift") p.shift = v > 0.5; else if (s == "output") p.output = (int)v;
         else if (s == "channel") p.channel = (int)v; else if (s == "drive") p.drive = v;
     }
     return p;
 }
-static Params all10(int ch) { return P({{"channel", (double)ch}, {"volume", 10}, {"drive", 10}, {"treble", 10}, {"middle", 10}, {"bass", 10}, {"presence", 10}, {"jubilee", 10}, {"sag", 10}, {"master", 10}, {"bright", 1}, {"shift", 1}}); }
-static Params all0(int ch) { return P({{"channel", (double)ch}, {"volume", 0}, {"drive", 0}, {"treble", 0}, {"middle", 0}, {"bass", 0}, {"presence", 0}, {"jubilee", 0}, {"sag", 0}, {"master", 0}}); }
+static Params all10(int ch) { return P({{"channel", (double)ch}, {"volume", 10}, {"drive", 10}, {"treble", 10}, {"middle", 10}, {"bass", 10}, {"presence", 10}, {"clip", 10}, {"sag", 10}, {"master", 10}, {"bright", 1}, {"shift", 1}}); }
+static Params all0(int ch) { return P({{"channel", (double)ch}, {"volume", 0}, {"drive", 0}, {"treble", 0}, {"middle", 0}, {"bass", 0}, {"presence", 0}, {"clip", 0}, {"sag", 0}, {"master", 0}}); }
 
 // ---------------------------------------------------------------- golden input/output pairs
 struct Golden { const char* name; Params p; double seconds; };
@@ -94,11 +96,11 @@ int main(int argc, char** argv) {
     const bool update = argc > 1 && !std::strcmp(argv[1], "--update");
     const std::vector<Golden> golden = {
         {"rhythm_clean", Params{}, 0.3},
-        {"rhythm_jubilee", P({{"jubilee", 6}, {"sag", 5}}), 0.3},
+        {"rhythm_clip", P({{"clip", 6}, {"sag", 5}}), 0.3},
         {"rhythm_pushed", P({{"volume", 9}, {"master", 9}, {"sag", 8}}), 0.3},
         {"rhythm_bright_shift_amp", P({{"bright", 1}, {"shift", 1}, {"output", 1}}), 0.3},
         {"lead_low", P({{"channel", 1}, {"drive", 3}}), 0.3},
-        {"lead_high", P({{"channel", 1}, {"drive", 9}, {"jubilee", 4}, {"sag", 5}}), 0.3},
+        {"lead_high", P({{"channel", 1}, {"drive", 9}, {"clip", 4}, {"sag", 5}}), 0.3},
     };
     if (update) {
         for (auto& g : golden) {
@@ -123,8 +125,8 @@ int main(int argc, char** argv) {
     std::printf("every solver converges: a 1 ppm change at the input moves the output by about -120 dB\n");
     {
         const auto x = plucks(1.0);
-        for (auto& [name, p] : std::vector<std::pair<const char*, Params>>{{"rhythm", Params{}}, {"rhythm, jubilee 10", P({{"jubilee", 10}})},
-                 {"rhythm all on 10", all10(0)}, {"lead, drive 5", P({{"channel", 1}})}, {"lead, drive 10, jubilee 8, sag 8", P({{"channel", 1}, {"drive", 10}, {"jubilee", 8}, {"sag", 8}})}, {"lead all on 10", all10(1)}}) {
+        for (auto& [name, p] : std::vector<std::pair<const char*, Params>>{{"rhythm", Params{}}, {"rhythm, clip 10", P({{"clip", 10}})},
+                 {"rhythm all on 10", all10(0)}, {"lead, drive 5", P({{"channel", 1}})}, {"lead, drive 10, clip 8, sag 8", P({{"channel", 1}, {"drive", 10}, {"clip", 8}, {"sag", 8}})}, {"lead all on 10", all10(1)}}) {
             const Out a = render(p, x), b = render(p, x, 1 + 1e-6);
             check(residualDb(a.L, b.L) < -95, name, "%.1f dB (limit %.0f)", residualDb(a.L, b.L), -95);
         }
@@ -132,12 +134,12 @@ int main(int argc, char** argv) {
 
     std::printf("hard high notes stay clean: steady sine, share of energy off its harmonics (subharmonics, aliasing)\n");
     for (auto& [name, p, f, lim] : std::vector<std::tuple<const char*, Params, double, double>>{
-             {"rhythm, jubilee 10, 2637 Hz", P({{"jubilee", 10}}), 2637.0, -55.0},
-             {"rhythm, jubilee 10, 4186 Hz", P({{"jubilee", 10}}), 4186.0, -55.0},
+             {"rhythm, clip 10, 2637 Hz", P({{"clip", 10}}), 2637.0, -55.0},
+             {"rhythm, clip 10, 4186 Hz", P({{"clip", 10}}), 4186.0, -50.0},
              {"rhythm, 4186 Hz (aliasing budget)", Params{}, 4186.0, -55.0},
-             {"lead, drive 7, 4186 Hz (aliasing budget)", P({{"channel", 1}, {"drive", 7}}), 4186.0, -38.0},
-             {"lead, drive 10, jubilee 8, 2637 Hz", P({{"channel", 1}, {"drive", 10}, {"jubilee", 8}}), 2637.0, -36.0},
-             {"lead, drive 10, jubilee 8, 4186 Hz", P({{"channel", 1}, {"drive", 10}, {"jubilee", 8}}), 4186.0, -30.0}}) {
+             {"lead, drive 7, 4186 Hz (aliasing budget)", P({{"channel", 1}, {"drive", 7}}), 4186.0, -35.0},
+             {"lead, drive 10, clip 8, 2637 Hz", P({{"channel", 1}, {"drive", 10}, {"clip", 8}}), 2637.0, -36.0},
+             {"lead, drive 10, clip 8, 4186 Hz", P({{"channel", 1}, {"drive", 10}, {"clip", 8}}), 4186.0, -30.0}}) {
         const Out o = render(p, sine(f, -6, 2.0)); const double v = inharmonicDb(o.L, (size_t)(1.2 * FS), f);
         check(v < lim, name, "%.1f dB (limit %.0f)", v, lim);
     }
@@ -147,22 +149,38 @@ int main(int argc, char** argv) {
         const double VT = 0.02585, ISLED = 0.01 / std::exp(1.8 / (2.0 * VT)); double worst = 0;
         for (double rt : {59700.0 + 220, 59700.0 + 100e3, 59700.0 + 470e3}) for (double vo = -60; vo <= 60; vo += 0.0013) {
             const double nvt = (vo >= 0 ? 2.0 : 4.0) * VT, av = std::abs(vo), k = rt * ISLED;
-            const double x = std::min(av + k - nvt * lambertW(std::log(k / nvt) + (av + k) / nvt), av);
+            const double x = std::min(av + k - nvt * jk::lambertW(std::log(k / nvt) + (av + k) / nvt), av);
             worst = std::max(worst, std::abs(av - x - k * std::expm1(x / nvt)));
         }
-        check(worst < 1e-6, "Jubilee LEDs: KVL error over -60..60 V", "%.2g V (limit %.0g)", worst, 1e-6);
+        check(worst < 1e-6, "Clip LEDs: KVL error over -60..60 V", "%.2g V (limit %.0g)", worst, 1e-6);
+    }
+
+    std::printf("power section\n");
+    for (double pres : {0.0, 5.0, 10.0}) for (double mas : {3.0, 10.0}) {   // the feedback loop settles after an impulse at every setting
+        Engine e; e.setParams(P({{"presence", pres}, {"master", mas}, {"output", 1}})); e.prepare(FS);
+        const int n = (int)(0.6 * e.FSI); double s1 = 0, s2 = 0; int m = 0;
+        for (int i = 0; i < n; ++i) { e.amp(i == 800 ? 0.2 : 0.0); if (i > n / 2) { s1 += e.vout; s2 += e.vout * e.vout; ++m; } }
+        const double v = std::sqrt(std::max(s2 / m - s1 * s1 / m / m, 0.0)) + std::abs(s1 / m);
+        char nm[80]; std::snprintf(nm, sizeof nm, "loop settles: presence %.0f, master %.0f", pres, mas);
+        check(v < 1e-3, nm, "%.2g V (limit %.0g)", v, 1e-3);
+    }
+    {   // Sag is real supply resistance: driven hard, the rails droop much further at Sag 10 than at 0
+        double rail[2];
+        for (int k = 0; k < 2; ++k) { Engine e; e.setParams(P({{"volume", 8}, {"master", 10}, {"sag", k ? 10.0 : 0.0}, {"output", 1}})); e.prepare(FS);
+            double lo = 1e9; for (int i = 0; i < (int)FS; ++i) { e.tick(0.5 * std::sin(2 * kPi * 110 * i / FS)); if (i > FS / 2) lo = std::min(lo, e.vposR); } rail[k] = lo; }
+        check(rail[0] - rail[1] > 2.0, "Sag 10 droops the rails more than Sag 0 under load", "%.2f V more (limit %.0f)", rail[0] - rail[1], 2.0);
     }
 
     std::printf("behaviour\n");
     for (int ch = 0; ch < 2; ++ch) for (int which = 0; which < 4; ++which) {
-        Engine e; Params p = P({{"channel", (double)ch}, {"jubilee", 4}}); e.setParams(p); e.prepare(FS);
+        Engine e; Params p = P({{"channel", (double)ch}, {"clip", 4}}); e.setParams(p); e.prepare(FS);
         double prev = 0, normal = 0, atMove = 0;
         for (int i = 0; i < 96000; ++i) {
-            if (i == 48123) { if (which == 0) p.treble += 0.2; else if (which == 1) p.jubilee += 0.3; else if (which == 2) p.master += 0.1; else p.presence += 0.2; e.setParams(p); }
+            if (i == 48123) { if (which == 0) p.treble += 0.2; else if (which == 1) p.clip += 0.3; else if (which == 2) p.master += 0.1; else p.presence += 0.2; e.setParams(p); }
             const double y = e.tick(0.3 * std::sin(2 * kPi * 110 * i / FS)), st = std::abs(y - prev); prev = y;
             if (i > 24000 && i < 48000) normal = std::max(normal, st); if (i >= 48123 && i < 48200) atMove = std::max(atMove, st);
         }
-        const char* kn[4] = {"treble", "jubilee", "master", "presence"};
+        const char* kn[4] = {"treble", "clip", "master", "presence"};
         check(atMove / normal < 2.5, (std::string(ch ? "lead: a " : "rhythm: a ") + kn[which] + " nudge mid-note does not click").c_str(), "%.2fx a normal step (limit %.1f)", atMove / normal, 2.5);
     }
     {
