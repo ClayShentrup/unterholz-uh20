@@ -10,4 +10,5 @@ These builds are not notarized by Apple yet. After copying, run this once in Ter
   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Unterholz UH-20.vst3" ~/Library/Audio/Plug-Ins/Components/"Unterholz UH-20.component" ~/Library/Audio/Plug-Ins/CLAP/"Unterholz UH-20.clap" /Applications/"Unterholz UH-20.app"
 
 Or install everything with Homebrew:
+  brew trust clayshentrup/tap
   brew install --cask clayshentrup/tap/unterholz-uh20

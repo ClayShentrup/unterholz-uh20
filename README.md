@@ -25,6 +25,7 @@ Get the latest build from **[Releases](https://github.com/ClayShentrup/unterholz
 On macOS you can also install with Homebrew:
 
 ```bash
+brew trust clayshentrup/tap
 brew install --cask clayshentrup/tap/unterholz-uh20
 ```
 
