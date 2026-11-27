@@ -71,7 +71,7 @@ Point at any control in the plugin and the strip at the bottom explains it.
 | **TIEFEN** (bass) | Low end; with high LAUT or ANTRIEB keep it at 5 or below, or the lows get loose. | 25k log bass pot with the stack's 1 µF and 0.47 µF. |
 | **PRÄSENZ** (presence) | Upper-mid bite: 0 = smooth and dark, 10 = cutting. | 5k pot and 0.1 µF in the power amp's global feedback leg. |
 | **CLIP** (LED clip) | LEDs flatten the peaks: more squash and sustain, thicker because the clipping is asymmetric; 0 = off. It is the diode-clipping idea Marshall introduced in the JCM800 2205/2210 split-channel heads (1982) and carried into the Silver Jubilee 2555 (1987), which used LEDs. | Dual-gang reverse-log pot: 47k in series with the LEDs (a red LED one way, two the other, behind a coupling capacitor at the stack input) and 100k bypassing part of the first stage's source resistor, so the stage drives them harder; 0 switches the branch out. |
-| **DURCHHANG** (sag) | The rails droop under hard chords: loud notes squash, then bloom back as the capacitors recharge. | 0-2.7 Ω rheostat in series with the supply ahead of the 4700 µF reservoir capacitors. |
+| **DURCHHANG** (sag) | The rails droop under hard chords: loud notes squash, then bloom back as the capacitors recharge. | 0-2.7 Ω in series with each rail ahead of the 4700 µF reservoir capacitors: an active rheostat (a MOSFET an op-amp holds at 2.7 Ω × setting) set by a 100k pot. |
 | **SUMME** (master) | Level into the power section: 6.5 is the reference clean tone; higher adds power-amp crunch and compression. | 100k log pot between the last gain stage's follower and the J201 long-tailed pair that drives the LM3886. |
 
 | Switch / setting | What it does to the sound | What it is in the circuit |
@@ -101,6 +101,7 @@ It is checked against ngspice on the same netlists ([`hardware/verify/`](hardwar
 | preamp + power section, Drive 0, 220 Hz at 20 mV-0.3 V, Clip 0 and 6 | every node within 0.04 dB of ngspice, waveforms -47 to -62 dB residual |
 | with the Drive stage, Drive 3 and 8, Clip 0 and 5, 220 Hz at 0.1-0.3 V | every node within 0.04 dB, waveforms -37 to -58 dB residual (-37 dB with the Drive stage's gate conducting hard) |
 | small-signal response, 50 Hz - 16 kHz | within 0.35 dB |
+| Sag's active rheostat against a 0-2.7 Ω power rheostat, on the real supply, driven into hard clipping and plucked, Sag 0/3/7/10 ([`sag.py`](hardware/spice/sag.py)) | rails within 4 mV (43 mV at Sag 0, the bypass relay's contacts), speaker -82 to -117 dB residual |
 
 The REC cab simulator (active filters) is fitted through this circuit to a measured studio preamp's clean tone: 1.39 dB rms from 60 Hz to 12.5 kHz at Volume 5, Treble 3, Middle 7, Bass 5, Presence 5, Master 6.5.
 

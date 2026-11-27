@@ -49,6 +49,58 @@ Against ngspice (`spice/rhythm.py ... drive=D` and `verify/compare.py`), 220 Hz,
 | 0.1, 5, 8 | -49.4 dB | -45.4 dB | -49.8 dB |
 | 0.3, 0, 8 (gate conducting) | -38.3 dB | -36.6 dB | -38.8 dB |
 
+### Sag is an active rheostat, set by a 100k pot (2026-11-27)
+
+Sag was a 0-2.7 ohm power rheostat in each rail. It carries the supply current, so no digital pot could ever take its place. Each rail now
+has an active rheostat instead: a MOSFET that an op-amp holds at 2.7 ohm x Sag/10 for any current, set by a 100k pot that carries less
+than a microamp. It presents the rails with the same resistance, so the plug-in, which models the supply as 0.3 ohm of winding plus
+2.7 ohm x Sag/10 ahead of the reservoirs, is unchanged (goldens byte-identical).
+
+- **Circuit (+ rail; the - rail is its mirror with an N-channel IRF3205).** Bridge + -> 25 mOhm sense resistor (4-terminal, 3 W) ->
+  IRF4905 P-channel MOSFET (source at the sense resistor, drain at the 4700 uF reservoir). A fixed divider across the whole element,
+  100 ohm over 10.7k (0.1%), taps 1/108 of its voltage. The Sag pot, 100k linear (one gang per rail), sits across the sense resistor;
+  its wiper, at g = Sag/10 from the bridge end, sits g x I x 25 mOhm below the bridge output. An OPA197 compares the two taps (1k into
+  each input) and drives the gate through 47 ohm, forcing V/108 = g x I x 0.025 ohm: the element is 2.7 x g ohm. Because the divider
+  spans the whole element, the FET's own resistance and the sense resistor's drop do not enter the result.
+- **The controller floats on the bridge output.** Each op-amp runs from an isolated +/-12 V DC-DC (Murata NMA1512SC, from the 15 V
+  supply) whose common is the bridge output, so its inputs sit within millivolts of mid-supply and the gate swings only by the FET's
+  gate-source voltage (at most 12 V). The pot floats with it, inside that +/-12 V: a production MCP41HV51 fits there, with its digital
+  lines through an isolator (ISO7741 class).
+- **Sag 0 is the pot's switch.** It closes a relay (DPST, 10 mOhm contacts per pole) across both elements: a near-short, as the
+  rheostat's end stop was. Between Sag 0 and about 0.15 the element bottoms out at its floor (25 mOhm + the FET's Rds(on), about 40 mOhm)
+  instead of 2.7 x g.
+- **One direction.** Current in each element only ever flows from the bridge into the reservoir (the bridge blocks the reverse), as in
+  the rheostat; the FETs' body diodes point against it.
+- **Dissipation** is the rheostat's: I^2 R of the charging pulses. With the LM3886 clipping hard into 8 ohm continuously, each element
+  averages 6.3 W (+) / 7.3 W (-) at Sag 10, 5.2 / 5.7 W at Sag 7, 2.8 / 3.1 W at Sag 3, with peaks of 26 W inside a charging pulse
+  (TO-220, on the amp's heatsink). The sense resistor takes about 1% of it.
+- **Power-up.** The empty reservoirs charge through the elements: without help the FET takes 190-260 W for a few milliseconds (1.2-1.8 J
+  in all). A standard soft-start, 47 ohm (10 W) in series with the primary shorted by a relay after 0.5 s, cuts that to 31-54 W
+  (`spice/sag.py startup`). Once the relay closes it is out of the circuit.
+- **Stability and accuracy.** Simulated at 50 ns steps through power-up and full clipping, the gate shows no ringing (its deviation from
+  a 20 us running mean stays under 2 mV while conducting), and V/I across the element, whenever it carries more than 1 A, is
+  2.700-2.704 ohm at Sag 10, 0.811-0.815 at Sag 3 and 0.136-0.141 at Sag 0.5 (targets 2.700, 0.810, 0.135).
+
+`spice/supply.py` is the supply as netlist text (centre-tapped secondary, 0.3 ohm per half, bridge, the Sag element, 4700 uF per rail, the
+LM3886 drawing its real rail currents); `spice/rhythm.py ... supply=rheo|active sag=S` runs the whole amp on it. The FETs are VDMOS fits
+to their datasheets (threshold, Rds(on), gfs, capacitances) and the op-amp a 10 MHz, 20 V/us macro-model. `spice/sag.py compare` runs the
+power section on its supply with each element, driven hard by a stepped 110 Hz tone (0.3, 1, 2, 4 V at the Master's output; the last two
+clip the LM3886) and by four plucked low-E notes, and compares the active rheostat against the rheostat:
+
+| Sag | + rail at rest -> lowest, rheostat / active (V) | rails, largest difference | speaker residual | speaker, largest difference |
+|---|---|---|---|---|
+| step 0 | 29.95 -> 26.82 / 29.94 -> 26.79 | 41.6 mV (relay contacts) | -117.0 dB | 2.8 mV |
+| step 3 | 29.56 -> 24.04 / 29.55 -> 24.04 | 3.9 mV | -116.9 dB | 2.5 mV |
+| step 7 | 29.15 -> 21.45 / 29.15 -> 21.44 | 3.5 mV | -88.7 dB | 17.7 mV |
+| step 10 | 28.88 -> 20.06 / 28.88 -> 20.06 | 3.4 mV | -86.0 dB | 13.0 mV |
+| pluck 0 | 29.95 -> 26.64 / 29.94 -> 26.61 | 43.4 mV (relay contacts) | -108.6 dB | 5.3 mV |
+| pluck 3 | 29.56 -> 24.27 / 29.55 -> 24.27 | 3.9 mV | -107.4 dB | 5.2 mV |
+| pluck 7 | 29.15 -> 22.03 / 29.15 -> 22.03 | 3.5 mV | -82.2 dB | 18.7 mV |
+| pluck 10 | 28.88 -> 20.82 / 28.88 -> 20.81 | 3.4 mV | -82.7 dB | 40.2 mV |
+
+The - rail matches the same way (Sag 10, step: -29.04 -> -19.38 V for both). The speaker swings about 25 V peak, so the largest
+difference is 0.16% of it.
+
 The v0.2 notes below are kept as the record; their LEAD parts describe the channel v0.3 removed.
 
 ## v0.2: the whole box is a circuit (2026-11-27)
@@ -67,7 +119,7 @@ Every J201 is the vendor SPICE model, solved each sample with its source network
   feedback: 100k from the speaker to the pair's second gate, 4.7k down; Presence = 0.1 uF + 5k across it. 220 pF on the pair's output
   compensates the loop: the gain margin is at least 10.3 dB at every Presence and Master setting (found by lowering the feedback resistor
   until the loop rings; the tests check it settles). Rails: 22 V AC secondary, bridge, 4700 uF per rail, through 0.3 ohm of winding plus
-  the Sag rheostat (0-2.7 ohm), so the rails droop under load (7.4 V further at Sag 10 than at 0 when driven hard). The LM3886 clips 3 V
+  the Sag resistance (0-2.7 ohm; since v0.3 an active rheostat set by a 100k pot, above), so the rails droop under load (7.4 V further at Sag 10 than at 0 when driven hard). The LM3886 clips 3 V
   inside its rails.
 - **REC.** The speaker voltage through a 1/20 divider into the active cab simulator (Sallen-Key high-pass, two MFB band-passes, two
   Sallen-Key low-passes), refitted through this circuit to the measured studio clean tone: 1.39 dB rms, 60 Hz - 12.5 kHz.
@@ -83,6 +135,7 @@ original scaled by 1/10 in resistance and 10 in capacitance, driven by a DC-coup
 | rhythm stack + Volume + Clip LED branch | 250k / 250k / 25k, 1M, 470k | 25k / 25k / 2.5k, 100k, 47k |
 | rhythm into Master | 1M | 100k |
 | Drive (v0.3) | | 100k |
+| Sag (v0.3) | 0-2.7 ohm power rheostat per rail, carrying the supply current | 100k linear, dual gang, setting an active rheostat per rail (above); it carries under a microamp and floats on the controller's isolated +/-12 V |
 | v0.2 lead Drive (removed) | 1M | 100k |
 | v0.2 lead stack + Master (removed) | 220k / 1M / 22k, 1M | 22k / 100k / 2.2k, 100k |
 
@@ -100,6 +153,8 @@ the LM3886 as a rail-limited gain block, and (v0.3) the Drive stage. `hardware/v
 - Rhythm, 220 Hz at 20 mV-0.3 V, Clip 0 and 6: every node within 0.03 dB of ngspice; waveforms -49 to -58 dB residual.
 - Rhythm small-signal response, 50 Hz - 16 kHz: within 0.35 dB.
 - Lead preamp: within 0.23 dB small-signal; -25 to -59 dB residual on waveforms.
+- Sag: the active rheostat against the power rheostat on the real supply (`spice/sag.py compare`): rails within 4 mV at Sag 3-10 (43 mV
+  at Sag 0, the relay's contacts), speaker -82 to -117 dB residual (table above).
 
 The JSFX in `jsfx/` is the earlier v0.1 model (two channels, behavioural gain stages, tanh power stage) with the exact LED solve. The plugin is the
 reference.

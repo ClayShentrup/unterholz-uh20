@@ -1,8 +1,33 @@
 """Write and run the UH-20 preamp (with the DRIVE stage when drive > 0) + power section as an ngspice netlist (J201 vendor model, LEDs, Mark III stack, J201
-long-tailed pair, LM3886 as a gain block limited at fixed rails, feedback with Presence). Usage: rhythm.py AMP JUBILEE [k=v...]"""
+long-tailed pair, LM3886 as a gain block limited at fixed rails, or at the live rails of the real supply with supply=rheo|active
+sag=S, feedback with Presence). Usage: rhythm.py AMP JUBILEE [k=v...]"""
 import sys, subprocess, os, math
 H = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, H)
+import supply
 def taperA(x): return 0.2 * x if x <= 0.5 else 0.1 + 1.8 * (x - 0.5)
+def power(pres, rail, kn):
+    """Long-tailed pair, LM3886 and feedback with Presence, from the pair's first gate lg1. Rails: fixed at +/-rail by default
+    (an ideal supply); supply=rheo or supply=active with sag=S builds the real supply (supply.py) and limits the LM3886 at its live rails."""
+    t = """* long-tailed pair, compensation, coupling into the LM3886 (gain 1 + 22k/5.6k, limited at the rails)
+JA pa lg1 tail J201
+JB pb lg2 tail J201
+RDA vp pa 22k
+RDB vp pb 22k
+RTL tail vn 30k
+CCMP pb 0 220p
+C6 pb pin 1u
+RPIN pin 0 47k
+"""
+    kind = kn.get("supply", "ideal")
+    if kind == "ideal": t += f"BOUT out 0 V=max(min({1+22/5.6}*V(pin),{rail}),-{rail})\nRLOAD out 0 8\n"
+    else: t += supply.MODELS + supply.supply(kind, kn.get("sag", 0), kn.get("soft", 0) > 0) + supply.lm3886(1 + 22 / 5.6)
+    return t + f"""* feedback: 100k to the pair's second gate, 4.7k down; Presence: 0.1u + 5k pot
+RNF out lg2 100k
+RFB lg2 0 4.7k
+CPR lg2 pn 0.1u
+RPR pn 0 {5000*(1-pres)+47:.6g}
+"""
 def netlist(amp, kn, out):
     t = min(max(kn["treble"] / 10, 0.0004), 0.9996); b = max(taperA(kn["bass"] / 10), 0.0004); m = max(kn["middle"] / 10, 0.004)
     vv = min(max(taperA(kn["volume"] / 10), 0.0005), 0.9995); ma = min(max(taperA(kn["master"] / 10), 0.0005), 0.9995)
@@ -67,23 +92,7 @@ RM1 mw mv {100e3*(1-ma):.6g}
 RM2 mv 0 {100e3*ma:.6g}
 C5 mv lg1 1u
 RL1 lg1 0 100k
-* long-tailed pair, compensation, coupling into the LM3886 (gain 1 + 22k/5.6k, limited at the rails)
-JA pa lg1 tail J201
-JB pb lg2 tail J201
-RDA vp pa 22k
-RDB vp pb 22k
-RTL tail vn 30k
-CCMP pb 0 220p
-C6 pb pin 1u
-RPIN pin 0 47k
-BOUT out 0 V=max(min({1+22/5.6}*V(pin),{rail}),-{rail})
-RLOAD out 0 8
-* feedback: 100k to the pair's second gate, 4.7k down; Presence: 0.1u + 5k pot
-RNF out lg2 100k
-RFB lg2 0 4.7k
-CPR lg2 pn 0.1u
-RPR pn 0 {5000*(1-pres)+47:.6g}
-.tran 2.6u 0.5 0.3 2.6u
+{power(pres, rail, kn)}.tran 2.6u 0.5 0.3 2.6u
 .control
 run
 wrdata {out} v({'dq' if don else 'd1'}) v(d3) v(pb) v(out)
@@ -92,6 +101,6 @@ wrdata {out} v({'dq' if don else 'd1'}) v(d3) v(pb) v(out)
 """
 if __name__ == "__main__":
     amp = float(sys.argv[1]); kn = dict(volume=5, treble=3, middle=7, bass=5, presence=5, jubilee=float(sys.argv[2]), master=6.5, drive=0)
-    for a in sys.argv[3:]: k, v = a.split("="); kn[k] = float(v)
+    for a in sys.argv[3:]: k, v = a.split("="); kn[k] = v if k == "supply" else float(v)
     out = os.path.abspath(f"rhythm_{amp}_{kn['jubilee']}_d{kn['drive']}.txt"); cir = out[:-4] + ".cir"; open(cir, "w").write(netlist(amp, kn, out))
     subprocess.run(["ngspice", "-b", cir], capture_output=True); print(out)

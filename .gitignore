@@ -7,3 +7,6 @@ tools/uh20_cli
 hardware/verify/amp_transient
 rhythm_*.txt
 rhythm_*.cir
+sag_*.txt
+sag_*.cir
+__pycache__/
