@@ -12,6 +12,9 @@ img{width:100%;height:auto;border:1px solid #b3b0a6}
 a.btn{display:inline-block;background:var(--or);color:#fff;padding:10px 18px;text-decoration:none;font-weight:700;margin:16px 12px 0 0}
 code{background:#cfccc1;padding:2px 6px}
 .mut{color:var(--mut)}
+ol.smp{list-style:none;padding:0;margin:0}ol.smp li{display:flex;gap:14px;border-top:1px solid #b3b0a6;padding:12px 0}
+ol.smp .n{font-weight:700;color:var(--or);min-width:2ch}ol.smp .t{flex:1;min-width:0}ol.smp span{color:var(--mut)}
+audio{display:block;width:100%;margin-top:8px}h2{letter-spacing:.2em;font-size:16px;margin:36px 0 6px}label{color:var(--mut);font-size:14px}
 </style></head><body>
 <header><h1>UNTERHOLZ</h1><p>UH-20 &nbsp; JFET-VORVERST&Auml;RKER &nbsp;/&nbsp; OPEN HARDWARE</p></header>
 <main>
@@ -19,5 +22,24 @@ code{background:#cfccc1;padding:2px 6px}
 <p>A JFET guitar preamp published as an open circuit, with a plugin that simulates that circuit. Clean channel: glassy, studio-preamp style. Lead channel: Marshall-style crunch to saturation. Supply sag, an LED clipper and an analog cab-sim output.</p>
 <a class="btn" href="https://github.com/ClayShentrup/unterholz-uh20/releases/latest">Download (VST3 / AU / CLAP / app)</a>
 <a class="btn" href="https://github.com/ClayShentrup/unterholz-uh20">Source and schematics</a>
-<p class="mut">Homebrew: <code>brew install --cask clayshentrup/unterholz/unterholz-uh20</code></p>
+
+<section id="samples"><h2>SAMPLES</h2>
+<p>One guitar part, the lead from Broken Ladder's <i>the puzzle remains</i> (a Gretsch Duo Jet, recorded straight in), through the UH-20 at ten settings, REC output. Light compression after the amp (at most 3 dB) and level matching, nothing else. The first is the setting on the record.</p>
+<label><input type="checkbox" id="cont" checked> play the next one when one ends</label>
+<ol class="smp">
+<li><div class="n">01</div><div class="t"><b>Rhythm</b> <span>volume 5, treble 3, middle 7, bass 5, presence 6, master 6.5 (the puzzle remains)</span><audio controls preload="none" src="samples/01%20Rhythm%20-%20volume%205%2C%20treble%203%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5%20%28the%20puzzle%20remains%29.mp3"></audio></div></li>
+<li><div class="n">02</div><div class="t"><b>Rhythm</b> <span>volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright</span><audio controls preload="none" src="samples/02%20Rhythm%20-%20volume%203%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%205%2C%20master%206.5%2C%20bright.mp3"></audio></div></li>
+<li><div class="n">03</div><div class="t"><b>Rhythm</b> <span>volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5</span><audio controls preload="none" src="samples/03%20Rhythm%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207.5.mp3"></audio></div></li>
+<li><div class="n">04</div><div class="t"><b>Rhythm</b> <span>volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7</span><audio controls preload="none" src="samples/04%20Rhythm%20-%20volume%208%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%208%2C%20sag%207.mp3"></audio></div></li>
+<li><div class="n">05</div><div class="t"><b>Rhythm</b> <span>volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5</span><audio controls preload="none" src="samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20jubilee%205.mp3"></audio></div></li>
+<li><div class="n">06</div><div class="t"><b>Lead</b> <span>drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5</span><audio controls preload="none" src="samples/06%20Lead%20-%20drive%203%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3"></audio></div></li>
+<li><div class="n">07</div><div class="t"><b>Lead</b> <span>drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5</span><audio controls preload="none" src="samples/07%20Lead%20-%20drive%205%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3"></audio></div></li>
+<li><div class="n">08</div><div class="t"><b>Lead</b> <span>drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4</span><audio controls preload="none" src="samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20jubilee%204.mp3"></audio></div></li>
+<li><div class="n">09</div><div class="t"><b>Lead</b> <span>drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5</span><audio controls preload="none" src="samples/09%20Lead%20-%20drive%209%2C%20treble%206%2C%20middle%206%2C%20bass%205%2C%20presence%207%2C%20master%207%2C%20sag%205.mp3"></audio></div></li>
+<li><div class="n">10</div><div class="t"><b>Lead</b> <span>drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift</span><audio controls preload="none" src="samples/10%20Lead%20-%20drive%206%2C%20treble%206%2C%20middle%205%2C%20bass%206%2C%20presence%205%2C%20master%206.5%2C%20bass%20shift.mp3"></audio></div></li>
+</ol></section>
+<script>
+document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
+document.addEventListener('ended', e => { const all = [...document.querySelectorAll('audio')]; const i = all.indexOf(e.target); if (i >= 0 && i + 1 < all.length && document.getElementById('cont') && document.getElementById('cont').checked) all[i + 1].play(); }, true);
+</script>
 </main></body></html>

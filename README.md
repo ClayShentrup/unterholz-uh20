@@ -34,20 +34,22 @@ REAPER users can also use [`jsfx/Unterholz UH-20.jsfx`](jsfx/) directly. It is t
 
 ## Samples
 
+**[Listen to them in your browser](https://clayshentrup.github.io/unterholz-uh20/#samples)**, one player per sample, or open any file below.
+
 One guitar part, the lead from Broken Ladder's *the puzzle remains* (a Gretsch Duo Jet, recorded straight in), through the UH-20 at ten settings, with the REC (analog cab) output. The only other processing is light compression after the amp (at most 3 dB) and level matching. Each file is named by its knobs. The first is the setting used on the record.
 
 | | Settings |
 |---|---|
-| 01 | [Rhythm - volume 5, treble 3, middle 7, bass 5, presence 6, master 6.5 (the puzzle remains)](samples/01%20Rhythm%20-%20volume%205%2C%20treble%203%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5%20%28the%20puzzle%20remains%29.mp3) |
-| 02 | [Rhythm - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright](samples/02%20Rhythm%20-%20volume%203%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%205%2C%20master%206.5%2C%20bright.mp3) |
-| 03 | [Rhythm - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5](samples/03%20Rhythm%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207.5.mp3) |
-| 04 | [Rhythm - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7](samples/04%20Rhythm%20-%20volume%208%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%208%2C%20sag%207.mp3) |
-| 05 | [Rhythm - volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5](samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20jubilee%205.mp3) |
-| 06 | [Lead - drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5](samples/06%20Lead%20-%20drive%203%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3) |
-| 07 | [Lead - drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5](samples/07%20Lead%20-%20drive%205%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3) |
-| 08 | [Lead - drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4](samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20jubilee%204.mp3) |
-| 09 | [Lead - drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5](samples/09%20Lead%20-%20drive%209%2C%20treble%206%2C%20middle%206%2C%20bass%205%2C%20presence%207%2C%20master%207%2C%20sag%205.mp3) |
-| 10 | [Lead - drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift](samples/10%20Lead%20-%20drive%206%2C%20treble%206%2C%20middle%205%2C%20bass%206%2C%20presence%205%2C%20master%206.5%2C%20bass%20shift.mp3) |
+| 01 | [Rhythm - volume 5, treble 3, middle 7, bass 5, presence 6, master 6.5 (the puzzle remains)](docs/samples/01%20Rhythm%20-%20volume%205%2C%20treble%203%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5%20%28the%20puzzle%20remains%29.mp3) |
+| 02 | [Rhythm - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright](docs/samples/02%20Rhythm%20-%20volume%203%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%205%2C%20master%206.5%2C%20bright.mp3) |
+| 03 | [Rhythm - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5](docs/samples/03%20Rhythm%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207.5.mp3) |
+| 04 | [Rhythm - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7](docs/samples/04%20Rhythm%20-%20volume%208%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%208%2C%20sag%207.mp3) |
+| 05 | [Rhythm - volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5](docs/samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20jubilee%205.mp3) |
+| 06 | [Lead - drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5](docs/samples/06%20Lead%20-%20drive%203%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3) |
+| 07 | [Lead - drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5](docs/samples/07%20Lead%20-%20drive%205%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3) |
+| 08 | [Lead - drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4](docs/samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20jubilee%204.mp3) |
+| 09 | [Lead - drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5](docs/samples/09%20Lead%20-%20drive%209%2C%20treble%206%2C%20middle%206%2C%20bass%205%2C%20presence%207%2C%20master%207%2C%20sag%205.mp3) |
+| 10 | [Lead - drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift](docs/samples/10%20Lead%20-%20drive%206%2C%20treble%206%2C%20middle%205%2C%20bass%206%2C%20presence%205%2C%20master%206.5%2C%20bass%20shift.mp3) |
 
 ## The controls
 
