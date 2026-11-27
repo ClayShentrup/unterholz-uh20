@@ -14,8 +14,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout UH20Processor::createLayout(
     auto knob = [&](const char* id, const char* name, float def) {
         l.add(std::make_unique<AudioParameterFloat>(ParameterID{id, 1}, name, NormalisableRange<float>(0.f, 10.f, 0.1f), def));
     };
-    knob("volume", "Volume (rhythm)", 5.f);
-    knob("drive", "Drive (lead)", 5.f);
+    knob("volume", "Volume", 5.f);
+    knob("drivestage", "Drive", 0.f);   // new ID in v0.3: the v0.2 lead channel's "drive" must not switch the stage in on old sessions
     knob("treble", "Treble", 3.f);
     knob("middle", "Middle", 7.f);
     knob("bass", "Bass", 5.f);
@@ -23,7 +23,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout UH20Processor::createLayout(
     knob("jubilee", "Clip", 0.f);   // ID kept from v0.1 ("jubilee") so saved sessions load
     knob("sag", "Sag", 0.f);
     knob("master", "Master", 6.5f);
-    l.add(std::make_unique<AudioParameterChoice>(ParameterID{"channel", 1}, "Channel", StringArray{"Rhythm", "Lead"}, 0));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{"bright", 1}, "Bright", false));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{"shift", 1}, "Bass shift", false));
     l.add(std::make_unique<AudioParameterChoice>(ParameterID{"output", 1}, "Output", StringArray{"REC (analog cab)", "AMP (no cab)"}, 0));
@@ -35,9 +34,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout UH20Processor::createLayout(
 uh20::Params UH20Processor::readParams() const {
     auto v = [&](const char* id) { return (double)apvts.getRawParameterValue(id)->load(); };
     uh20::Params p;
-    p.volume = v("volume"); p.drive = v("drive"); p.treble = v("treble"); p.middle = v("middle"); p.bass = v("bass");
+    p.volume = v("volume"); p.drive = v("drivestage"); p.treble = v("treble"); p.middle = v("middle"); p.bass = v("bass");
     p.presence = v("presence"); p.clip = v("jubilee"); p.sag = v("sag"); p.master = v("master");
-    p.channel = (int)v("channel"); p.bright = v("bright") > 0.5; p.shift = v("shift") > 0.5;
+    p.bright = v("bright") > 0.5; p.shift = v("shift") > 0.5;
     p.output = (int)v("output"); p.inputVolts = v("involts"); p.trimDb = v("trim");
     return p;
 }

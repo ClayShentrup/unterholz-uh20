@@ -18,6 +18,39 @@ The deliverable is a schematic of ordinary parts. The plugin (`source/dsp/UH20En
 - First results: cold clipper 0.3%, gain stage 0.7%, input stage 1.0% of swing.
 - Interstage dividers are the tube divider × the next stage's input scale × the previous stage's output scale.
 
+## v0.3: one amp, one character (2026-11-27)
+
+The lead channel is gone. There is one signal path, the v0.2 rhythm channel below, and one more knob, **ANTRIEB (Drive)**, which
+switches a second cascaded J201 stage of the same family in between Q1 and the Mark III stack. From the studio clean tone it climbs to
+edge of breakup, then crunch, then a saturated, singing lead, all through the same stack, LEDs, gain stages and power section.
+
+- **Drive stage.** Q1's follower -> 1k -> 1 uF -> Drive pot (100k log; its bottom returns to ground through 1k) -> J201 gate
+  (Rd 68k, Rs 1.5k || 22 uF, 18 V) -> rail-to-rail follower -> the stack's 6.8k feed, in place of Q1's follower. The 1k under the pot
+  keeps the stage's input from ever reaching zero, so from about Drive 0.5 up the level stays near the clean tone's and the knob mostly
+  adds gain and saturation (integrated loudness on a guitar part, Drive 0 -> 10: -8.0, -6.7 at 0.5, -4.2 at 1, -2.0 at 2, -1.0 at 3,
+  0.0 at 5, +1.5 at 7, -1.1 LUFS at 10 as the stage saturates). The gate conducts when driven hard: the engine solves it against the
+  network's Thevenin at the gate and injects that current back, so the coupling capacitor charges and the bias shifts as in the circuit.
+- **Drive 0 is a switch.** At 0 (below 0.05) the pot's switch takes the stage out and Q1's follower drives the stack directly, exactly
+  the v0.2 circuit: v0.3 at Drive 0 is bit-identical to v0.2's rhythm channel (`tests/`: the four v0.2 rhythm goldens are frozen and
+  still match; the guitar DI through the v0.2 and v0.3 command-line renderers at seven settings compares byte for byte). The plug-in
+  crossfades over about 85 ms when the switch moves while playing; the hardware switch would pop.
+- **Harmonics.** 110 Hz at -30 dBFS, harmonics relative to the fundamental at the speaker: -43 dB at Drive 0, -38 at 1, -30 at 3,
+  -26 at 5, -12 at 7, -10 dB at 10.
+- **Clip** is the diode-clipping idea Marshall introduced in the JCM800 2205/2210 split-channel heads (1982) and carried into the
+  Silver Jubilee 2555 (1987), which used LEDs. Here it is a red LED one way and two in series the other, behind a coupling capacitor at
+  the stack input.
+
+Against ngspice (`spice/rhythm.py ... drive=D` and `verify/compare.py`), 220 Hz, every node within 0.04 dB in level:
+
+| AMP V, Clip, Drive | Drive stage | Q3 drain | speaker |
+|---|---|---|---|
+| 0.1, 0, 3 | -52.8 dB | -47.7 dB | -48.8 dB |
+| 0.3, 5, 3 | -58.4 dB | -52.5 dB | -56.2 dB |
+| 0.1, 5, 8 | -49.4 dB | -45.4 dB | -49.8 dB |
+| 0.3, 0, 8 (gate conducting) | -38.3 dB | -36.6 dB | -38.8 dB |
+
+The v0.2 notes below are kept as the record; their LEAD parts describe the channel v0.3 removed.
+
 ## v0.2: the whole box is a circuit (2026-11-27)
 
 Nothing in the shipped engine is behavioural any more. `source/dsp/UH20Engine.h` builds the box from parts (`source/dsp/JfetKit.h`).
@@ -49,11 +82,12 @@ original scaled by 1/10 in resistance and 10 in capacitance, driven by a DC-coup
 |---|---|---|
 | rhythm stack + Volume + Clip LED branch | 250k / 250k / 25k, 1M, 470k | 25k / 25k / 2.5k, 100k, 47k |
 | rhythm into Master | 1M | 100k |
-| lead Drive | 1M | 100k |
-| lead stack + Master | 220k / 1M / 22k, 1M | 22k / 100k / 2.2k, 100k |
+| Drive (v0.3) | | 100k |
+| v0.2 lead Drive (removed) | 1M | 100k |
+| v0.2 lead stack + Master (removed) | 220k / 1M / 22k, 1M | 22k / 100k / 2.2k, 100k |
 
 Checks:
-- The lead networks are identical in ngspice AC (`spice/lead_scaling.py`: 0.0000 dB difference, 30 Hz - 20 kHz).
+- The v0.2 lead networks were identical in ngspice AC (0.0000 dB difference, 30 Hz - 20 kHz; the script left with the channel).
 - Rhythm, scaled against unscaled: the same fit to the studio tone (1.39 dB rms); level and distortion curves within 0.1 dB and 1%;
   -53 dB waveform residual clean. At Clip 6 it is -36 dB, because the LEDs now carry ten times the current at the same voltage (about
   0.1 V of knee shift).
@@ -62,10 +96,10 @@ Checks:
 ### Verified against ngspice
 
 `spice/rhythm.py` writes the rhythm channel and power section with the scaled networks, the followers, the LEDs, the long-tailed pair and
-the LM3886 as a rail-limited gain block. `hardware/verify/` holds the lead harness.
+the LM3886 as a rail-limited gain block, and (v0.3) the Drive stage. `hardware/verify/` holds the harnesses.
 - Rhythm, 220 Hz at 20 mV-0.3 V, Clip 0 and 6: every node within 0.03 dB of ngspice; waveforms -49 to -58 dB residual.
 - Rhythm small-signal response, 50 Hz - 16 kHz: within 0.35 dB.
 - Lead preamp: within 0.23 dB small-signal; -25 to -59 dB residual on waveforms.
 
-The JSFX in `jsfx/` is the earlier v0.1 model (behavioural gain stages, tanh power stage) with the exact LED solve. The plugin is the
+The JSFX in `jsfx/` is the earlier v0.1 model (two channels, behavioural gain stages, tanh power stage) with the exact LED solve. The plugin is the
 reference.

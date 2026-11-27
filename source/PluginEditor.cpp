@@ -19,8 +19,8 @@ void KnobLook::drawRotarySlider(Graphics& g, int x, int y, int w, int h, float p
     g.setColour(kInk); g.fillEllipse(cx - r, cy - r, 2 * r, 2 * r);
     g.setColour(Colour(0xff383836)); g.drawEllipse(cx - r + 6, cy - r + 6, 2 * r - 12, 2 * r - 12, 1.f);
     const float a = start + (end - start) * pos;
-    const bool accent = (bool)s.getProperties()["accent"], dim = (bool)s.getProperties()["dim"];
-    g.setColour(accent ? kOrange : (dim ? Colour(0xff737370) : Colour(0xfff5f2eb)));
+    const bool accent = (bool)s.getProperties()["accent"];
+    g.setColour(accent ? kOrange : Colour(0xfff5f2eb));
     g.drawLine(cx + std::sin(a) * 6, cy - std::cos(a) * 6, cx + std::sin(a) * (r - 3), cy - std::cos(a) * (r - 3), 3.f);
 }
 
@@ -38,15 +38,15 @@ void Switch::paint(Graphics& g) {
 Panel::Panel(AudioProcessorValueTreeState& state) : apvts(state) {
     struct K { const char *id, *de, *en, *help; };
     const K ks[] = {
-        {"volume", "LAUT", "rhythm volume", "LAUT (rhythm volume): gain of the clean channel. Clean up to about 5, edge of breakup at 6-7, crunch above."},
-        {"drive", "ANTRIEB", "lead drive", "ANTRIEB (lead drive): gain of the LEAD channel only. Low = edge-of-breakup crunch, about 5 = creamy crunch, 8-10 = saturated."},
-        {"treble", "HÖHEN", "treble", "HOEHEN (treble): top end. In RHYTHMUS the tone controls come before the gain stages, so more treble also means more gain."},
-        {"middle", "MITTEN", "middle", "MITTEN (middle): midrange body. In LEAD it works after the distortion, so it shapes the crunch without changing the gain."},
-        {"bass", "TIEFEN", "bass", "TIEFEN (bass): low end. In RHYTHMUS keep it at 5 or below; above that the low end gets loose."},
+        {"volume", "LAUT", "volume", "LAUT (volume): preamp gain, after the tone stack. Clean up to about 5, edge of breakup at 6-7, crunch above."},
+        {"drivestage", "ANTRIEB", "drive", "ANTRIEB (drive): one more J201 gain stage ahead of the tone stack. 0 = switched out (the clean amp); 2 = edge of breakup; 5 = crunch; 8-10 = singing lead."},
+        {"treble", "HÖHEN", "treble", "HOEHEN (treble): top end. The tone stack comes before the last gain stages, so more treble also drives them harder."},
+        {"middle", "MITTEN", "middle", "MITTEN (middle): midrange body. Low = the scooped Mark-style stack; high = fuller, and more mids pushed into the gain stages."},
+        {"bass", "TIEFEN", "bass", "TIEFEN (bass): low end. With high LAUT or ANTRIEB keep it at 5 or below; above that the low end gets loose."},
         {"presence", "PRÄSENZ", "presence", "PRAESENZ (presence): upper-mid bite from the power stage's feedback loop. 0 = smooth and dark, 10 = cutting."},
-        {"jubilee", "CLIP", "LED clip", "CLIP: LEDs clip the peaks: flatter tops, more squash and sustain, and thicker because the clipping is asymmetric. 0 = off."},
+        {"jubilee", "CLIP", "LED clip", "CLIP: LEDs clip the peaks: flatter tops, more sustain, thicker (asymmetric). The diode-clipping idea of Marshall's JCM800 2205/2210 (1982) and Silver Jubilee 2555 (1987, LEDs). 0 = off."},
         {"sag", "DURCHHANG", "sag", "DURCHHANG (sag): resistance in the power supply. Higher = the rails droop under hard chords, so loud notes squash and then bloom back as the capacitors recharge."},
-        {"master", "SUMME", "master", "SUMME (master): drive into the power stage. RHYTHMUS: 6.5 = the studio clean tone. LEAD: higher = more power-amp crunch."},
+        {"master", "SUMME", "master", "SUMME (master): level into the power stage. 6.5 = the studio clean tone; higher = more power-amp crunch and compression."},
     };
     int i = 0;
     for (auto& k : ks) {
@@ -69,10 +69,6 @@ Panel::Panel(AudioProcessorValueTreeState& state) : apvts(state) {
     }
     struct S { const char *label, *sub, *help; std::function<bool()> on; std::function<void()> click; };
     const S ss[] = {
-        {"RHYTHMUS", "clean", "RHYTHMUS: the clean channel (studio-preamp style). Use LAUT for its gain.",
-         [this] { return value("channel") < 0.5f; }, [this] { setChoice("channel", 0); }},
-        {"LEAD", "drive", "LEAD: the drive channel (Marshall-style). Use ANTRIEB for its gain; SUMME adds power-amp crunch.",
-         [this] { return value("channel") > 0.5f; }, [this] { setChoice("channel", 1); }},
         {"HELL", "bright", "HELL (bright): treble bleed across LAUT. Adds sparkle at low LAUT settings and fades out as LAUT goes up.",
          [this] { return value("bright") > 0.5f; }, [this] { toggle("bright"); }},
         {"TIEF", "shift", "TIEF (bass shift): lets more low end into the first stage. Fatter, warmer; a little looser.",
@@ -90,13 +86,13 @@ Panel::Panel(AudioProcessorValueTreeState& state) : apvts(state) {
         addAndMakeVisible(*sw);
         switches.push_back(std::move(sw));
     }
-    for (auto id : {"channel", "bright", "shift", "output", "involts", "trim"}) apvts.addParameterListener(id, this);
+    for (auto id : {"bright", "shift", "output", "involts", "trim"}) apvts.addParameterListener(id, this);
     setSize(W, H);
 }
 
 Panel::~Panel() {
     for (auto& k : knobs) { apvts.removeParameterListener(k.id, this); k.s->setLookAndFeel(nullptr); }
-    for (auto id : {"channel", "bright", "shift", "output", "involts", "trim"}) apvts.removeParameterListener(id, this);
+    for (auto id : {"bright", "shift", "output", "involts", "trim"}) apvts.removeParameterListener(id, this);
 }
 
 void Panel::setChoice(const char* id, int index) {
@@ -116,7 +112,7 @@ void Panel::resized() {
     const int KY = 150;
     for (size_t i = 0; i < knobs.size(); ++i) knobs[i].s->setBounds(knobX((int)i) - 38, KY - 38, 76, 76);
     const int SY = 248;
-    const int xs[] = {26, 112, 204, 268, 360, 424}, ws[] = {84, 62, 62, 62, 62, 62};
+    const int xs[] = {26, 90, 182, 246}, ws[] = {62, 62, 62, 62};
     for (size_t i = 0; i < switches.size(); ++i) switches[i]->setBounds(xs[i], SY, ws[i], 40);
 }
 
@@ -152,11 +148,8 @@ void Panel::paint(Graphics& g) {
     g.drawSingleLineText("AUSGANG", knobX(8) - 30, 92);
     // knob captions and values
     const int KY = 150;
-    const bool rhythm = value("channel") < 0.5f;
     for (size_t i = 0; i < knobs.size(); ++i) {
         auto& k = knobs[i];
-        const bool dim = (i == 1 && rhythm);
-        if ((bool)k.s->getProperties()["dim"] != dim) { k.s->getProperties().set("dim", dim); k.s->repaint(); }
         const int cx = knobX((int)i);
         g.setColour(kInk); g.setFont(uiFont(12.f, true));
         g.drawText(k.de, cx - 50, KY + 38, 100, 16, Justification::centred);
@@ -172,7 +165,7 @@ void Panel::paint(Graphics& g) {
     g.setColour(kBand); g.fillRect(0, H - 34, W, 34);
     if (help.isNotEmpty()) { g.setColour(kOrange); g.fillRect(12, H - 24, 6, 14); }
     g.setColour(help.isNotEmpty() ? Colour(0xfff2efe6) : Colour(0xff8c8c85)); g.setFont(uiFont(11.f, false));
-    g.drawText(help.isNotEmpty() ? help : String("Point at any knob or switch to see what it does."), 26, H - 34, W - 40, 34, Justification::centredLeft);
+    g.drawFittedText(help.isNotEmpty() ? help : String("Point at any knob or switch to see what it does."), 26, H - 34, W - 40, 34, Justification::centredLeft, 2, 1.0f);
 }
 
 } // namespace uh20ui

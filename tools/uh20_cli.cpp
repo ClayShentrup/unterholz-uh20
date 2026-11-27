@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
         if (k == "volume") p.volume = v; else if (k == "treble") p.treble = v; else if (k == "middle") p.middle = v; else if (k == "bass") p.bass = v;
         else if (k == "presence") p.presence = v; else if (k == "clip" || k == "jubilee") p.clip = v; else if (k == "sag") p.sag = v; else if (k == "master") p.master = v;
         else if (k == "bright") p.bright = v > 0.5; else if (k == "shift") p.shift = v > 0.5; else if (k == "output") p.output = (int)v;
-        else if (k == "trim") p.trimDb = v; else if (k == "channel") p.channel = (int)v; else if (k == "drive") p.drive = v; else if (k == "involts") p.inputVolts = v;
+        else if (k == "trim") p.trimDb = v; else if (k == "drive") p.drive = v; else if (k == "involts") p.inputVolts = v;
     }
     FILE* f = std::fopen(argv[1], "rb"); if (!f) return 2;
     std::vector<float> x; float t; while (std::fread(&t, 4, 1, f) == 1) x.push_back(t); std::fclose(f);

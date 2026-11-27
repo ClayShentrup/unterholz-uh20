@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(UnterholzUH20 VERSION 0.1.0 LANGUAGES C CXX)
+project(UnterholzUH20 VERSION 0.3.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
@@ -15,7 +15,7 @@ juce_add_plugin(UnterholzUH20
     PLUGIN_CODE Uh20
     FORMATS VST3 AU Standalone
     PRODUCT_NAME "Unterholz UH-20"
-    DESCRIPTION "JFET guitar preamp: studio clean channel, Marshall-style lead channel"
+    DESCRIPTION "JFET guitar amp: one voice from studio clean to singing lead"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE

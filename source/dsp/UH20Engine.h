@@ -1,9 +1,7 @@
-// Unterholz UH-20: the circuit of the box, simulated from its parts. Two channels into one class AB power section.
-//   RHYTHM: J201 input stage (Clip: LEDs at the stack input and a gang that opens up the stage's source), Mark III tone stack,
-//           Volume (1M log, bright cap), two J201 gain stages.
-//   LEAD:   the 2203 preamp translated stage by stage into J201s (hardware/spice/jfet800.cir), Drive = its 1M log volume, the
-//           Clip LEDs behind the cold clipper, a source follower into a Marshall tone stack.
-//   POWER:  Master (1M log) into a J201 long-tailed pair, then an LM3886 (class AB) with global feedback to the pair's second gate,
+// Unterholz UH-20: the circuit of the box, simulated from its parts. One amp, one voice, into a class AB power section.
+//   PREAMP: J201 input stage (Clip: LEDs at the stack input and a gang that opens up the stage's source); DRIVE: a cascaded J201
+//           stage switched in ahead of the stack (0 = out); Mark III tone stack, Volume (bright cap), two J201 gain stages.
+//   POWER:  Master into a J201 long-tailed pair, then an LM3886 (class AB) with global feedback to the pair's second gate,
 //           Presence in that feedback network, the speaker load, and rails from an unregulated supply whose series resistance is
 //           the Sag control. REC: an active cab simulator on the speaker output (1/20 divider); AMP: the same divider without it.
 // Every J201 is the vendor model (hardware/spice/j201.lib) solved per sample with its real loading (source/dsp/JfetKit.h).
@@ -66,8 +64,7 @@ struct Params {
     int output = 0;          // 0 = REC (analog cab sim), 1 = AMP (no cab)
     double inputVolts = 1.6; // volts at 0 dBFS
     double trimDb = 0;
-    int channel = 0;         // 0 = Rhythmus, 1 = Lead
-    double drive = 5;        // Lead drive (Antrieb)
+    double drive = 0;        // DRIVE (Antrieb): 0 = the cascaded stage switched out
     bool operator==(const Params&) const = default;
 };
 
@@ -82,11 +79,10 @@ public:
         aaup.reset(); aadn.reset();
         for (auto* b : {&chp, &cp1, &cp2, &clp1, &clp2}) b->reset();
         // DC operating point of every stage, then each network charged to it
-        q1.settle(); q2.settle(); q3.settle(); l1.settle(); l2.settle(); l34.prepare(FSI); ltp.settle();
-        rN1.initDC(q1.vd0); rN2.initDC(q2.vd0); rN3.initDC(q3.vd0);
-        lN1.initDC(l1.vd0); lN2.initDC(l2.vd0); lN3.initDC(l34.vf0);
+        q1.settle(); qd.settle(); q2.settle(); q3.settle(); ltp.settle();
+        rN1.initDC(don ? qd.vd0 : q1.vd0); rN2.initDC(q2.vd0); rN3.initDC(q3.vd0); dN.initDC(q1.vd0);
         cpl.initDC(ltp.d20); fb.initDC(0);
-        vout = 0; vposR = vnegR = railRest(); ph = 0;
+        vout = 0; vposR = vnegR = railRest(); ph = 0; xf = 0;
     }
     void setParams(const Params& np) { if (!(np == p)) update(np, false); }
     void process(float* buf, int n) { for (int i = 0; i < n; ++i) buf[i] = (float)tick(buf[i]); }
@@ -114,21 +110,18 @@ public:
     Params p;
     double srate = 48000, FSI = 384000;
     Butter8 aaup, aadn;
-    jk::JStage q1, q2, q3, l2;      // rhythm stages; lead cold clipper
-    jk::CSStage l1;                  // lead input stage
-    jk::GainFollower l34;            // lead gain stage + source follower
+    jk::JStage q1, qd, q2, q3;     // input stage, Drive stage, the two gain stages
     jk::LongTailPair ltp;
     jk::Network<10> rN1;  // Q1 drain -> 4.7k -> A -> Mark III stack -> Volume (bright) -> 22n -> Q2 gate (1M); A -> 0.47u -> LEDs
     jk::Network<3> rN2;   // Q2 drain -> 22n -> 100k -> Q3 gate (6.8k)
     jk::Network<5> rN3;   // Q3 drain -> 100n -> 47k -> Master (1M log) -> 0.1u -> LTP gate (1M)
-    jk::Network<4> lN1;   // J1 drain -> 220n -> 470k || 470p -> Drive (1M log, 1n bright) -> J2 gate
-    jk::Network<3> lN2;   // J2 drain -> 220n -> a (LEDs) -> 470k || 470p -> J3 gate (180k)
-    jk::Network<9> lN3;   // follower -> Marshall stack -> 1.5M -> Master (1M log) -> 0.1u -> LTP gate (1M)
+    jk::Network<3> dN;    // Drive: Q1 follower -> 1k -> 1u -> 100k log pot (1k below it) -> Drive stage gate
     jk::Network<2> cpl;   // LTP drain 2 -> 1u -> LM3886 + input (47k)
     jk::Network<2> fb;    // speaker -> 100k -> LTP gate 2 (4.7k; Presence: 0.1u + 5k)
     Biquad chp, cp1, cp2, clp1, clp2;
     double a1 = 0, a2 = 0, csc = 4.12 / 14.12, gout = 1;
-    bool jon = false, built = false; double rj = 1e9, rsup = 0.3, vout = 0, vposR = 30, vnegR = 30, ph = 0;
+    bool jon = false, don = false, built = false; int xf = 0; static constexpr int XF = 32768;   // Drive switch fade: ~85 ms at 8x
+    double rj = 1e9, rsup = 0.3, vout = 0, vposR = 30, vnegR = 30, ph = 0;
     // LEDs: a red LED one way, two in series the other (1.8 V at 10 mA each)
     static constexpr double NVT1 = 2.0 * jk::VT, NVT2 = 4.0 * jk::VT;
     const double ISLED = 0.01 / std::exp(1.8 / NVT1), ISLED2 = 0.01 / std::exp(3.6 / NVT2);
@@ -141,30 +134,32 @@ public:
     static double buf(double v) { return std::clamp(v, 0.02, VPRE - 0.02); }
 
     inline double amp(double vin) {
-        double g1raw, g1rout;
-        if (p.channel == 0) {
-            const double g1 = jk::gateClamp(vin, 1e3, q1.vs);
-            const double d1 = q1.tick(g1, [](double) { return 0.0; });   // drain drives an op-amp follower only
-            const double b1 = buf(d1);
-            const double il = jon ? jk::diodeString(rN1.injV(b1), rj + rN1.Zi, ISLED, NVT1, ISLED2, NVT2) : 0.0;
-            const double w = rN1.process(b1, -il);
-            const double d2 = q2.tick(jk::gateClamp(w, rN1.rOut, q2.vs), [&](double vd) { return rN2.portG() * vd - rN2.portJ(); });
-            const double g3 = rN2.process(d2);
-            const double d3 = q3.tick(jk::gateClamp(g3, rN2.rOut, q3.vs), [](double) { return 0.0; });
-            g1raw = rN3.process(buf(d3)); g1rout = rN3.rOut;
-        } else {
-            const double d1 = l1.tick(jk::gateClamp(vin * 56.0 / 103.0, 47e3 * 56e3 / 103e3, l1.vs), 0, 0);   // 47k / 56k input pad
-            const double w = lN1.process(buf(d1));
-            auto led = [&](double vd) { return jon ? jk::diodeString(lN2.injV(vd), rj + lN2.Zi, ISLED, NVT1, ISLED2, NVT2) : 0.0; };
-            const double d2 = l2.tick(jk::gateClamp(w, lN1.rOut, l2.vs), [&](double vd) { return lN2.portG() * vd - lN2.portJi(-led(vd)); });
-            const double g3 = lN2.process(d2, -led(d2));
-            const double s4 = l34.tick(jk::gateClamp(g3, lN2.rOut, l34.a.vs), 0, 0);
-            g1raw = lN3.process(buf(s4)); g1rout = lN3.rOut;
+        const double g1 = jk::gateClamp(vin, 1e3, q1.vs);
+        const double d1 = q1.tick(g1, [](double) { return 0.0; });   // drain drives an op-amp follower only
+        double b1 = buf(d1);
+        if (don || xf > 0) {   // DRIVE: Q1's follower -> Drive pot -> the cascaded J201 -> its own follower, in place of Q1's
+            // the gate conducts when driven hard: solve it against the network's Thevenin at the gate and put that current back
+            // into the network, so the coupling capacitor charges (bias shift) as in the circuit
+            const double voc = dN.injV(b1), gd = jk::gateClamp(voc, dN.Zi, qd.vs), ig = (voc - gd) / dN.Zi;
+            dN.process(b1, -ig);
+            const double bs = buf(qd.tick(gd, [](double) { return 0.0; }));
+            if (xf > 0) {   // the switch moving while playing: a short crossfade of the signal and a slower glide of the DC level,
+                            // so it neither clicks nor thumps (the circuit's switch would pop; the plug-in does not need to)
+                const double t = 1.0 - (double)--xf / XF, wa = std::min(1.0, 8 * t), wd = t * t * (3 - 2 * t);
+                const double on = don ? wa : 1 - wa, dc = don ? wd : 1 - wd;
+                b1 = (1 - on) * (b1 - q1.vd0) + on * (bs - qd.vd0) + q1.vd0 + dc * (qd.vd0 - q1.vd0);
+            } else b1 = bs;
         }
+        const double il = jon ? jk::diodeString(rN1.injV(b1), rj + rN1.Zi, ISLED, NVT1, ISLED2, NVT2) : 0.0;
+        const double w = rN1.process(b1, -il);
+        const double d2 = q2.tick(jk::gateClamp(w, rN1.rOut, q2.vs), [&](double vd) { return rN2.portG() * vd - rN2.portJ(); });
+        const double g3 = rN2.process(d2);
+        const double d3 = q3.tick(jk::gateClamp(g3, rN2.rOut, q3.vs), [](double) { return 0.0; });
+        const double g1raw = rN3.process(buf(d3)), g1rout = rN3.rOut;
         // power section: long-tailed pair (gate 2 = the feedback network's output, from last sample's speaker voltage)
-        const double g1 = jk::gateClamp(g1raw, g1rout, ltp.vt);
-        const double d2 = ltp.tick(g1, fb.outV(vout), cpl.portG(), cpl.portJ());
-        const double vp = cpl.process(d2);
+        const double gp = jk::gateClamp(g1raw, g1rout, ltp.vt);
+        const double dp = ltp.tick(gp, fb.outV(vout), cpl.portG(), cpl.portJ());
+        const double vp = cpl.process(dp);
         // LM3886 into the speaker, limited by its rails (a few volts of dropout)
         vout = std::clamp(GLM * vp, -(vnegR - DROP), vposR - DROP);
         fb.process(vout);
@@ -215,25 +210,20 @@ public:
         const double ma = clampd(taperA(p.master / 10), 0.0005, 0.9995);
         { auto& n = rN3; n.clear(); n.rs = 4700; n.C(0, 1, 1e-6); n.R(1, 2, 4700); n.R(2, -1, 1e9);   // Q3 follower, 47k / 10
           n.R(2, 3, 100e3 * (1 - ma)); n.R(3, -1, 100e3 * ma); n.C(3, 4, 1e-6); n.R(4, -1, 100e3); n.out = 4; n.build(fs); }
-        // ---- lead (jfet800.cir): J1 27k / 1.5k || 100u; Drive 1M log with 1n bright; J2 56k / 2.2k; LEDs behind it; J3 56k / 1.8k + follower
-        l1.Vdd = VPRE; l1.Rd = 27e3; l1.Rs1 = 0; l1.Rs2 = 1500; l1.Cs = 100e-6; l1.prepare(fs);
-        {
+        // ---- DRIVE: a cascaded J201 of the same family (Rd 68k, Rs 1.5k || 22u), fed through a 100k log pot whose bottom returns
+        // through 1k, so from about Drive 0.5 up it starts near unity; at 0 a switch takes the stage out (Q1 drives the stack, as v0.2)
+        const bool donNew = p.drive >= 0.05;
+        qd.Vdd = VPRE; qd.Rd = 68e3; qd.src.clear(); qd.src.R(0, -1, 1500); qd.src.C(0, -1, 22e-6); qd.build(fs);
+        if (donNew || first) {   // switched out, the stage keeps its last pot setting while it fades away
             const double dv = clampd(taperA(p.drive / 10), 0.0005, 0.9995);
-            auto& n = lN1; n.clear(); n.rs = 2700; n.C(0, 1, 2.2e-6); n.R(1, 2, 47e3); n.C(1, 2, 4.7e-9);   // J1 follower, 27k / 10
-            n.R(2, 3, 100e3 * (1 - dv) + 1); n.R(3, -1, 100e3 * dv + 1); n.C(2, 3, 10e-9); n.out = 3; n.build(fs);
+            auto& n = dN; n.clear(); n.rs = 1000; n.inj = 2; n.C(0, 1, 1e-6); n.R(1, 2, 100e3 * (1 - dv)); n.R(2, -1, 100e3 * dv + 1000);
+            n.out = 2; n.build(fs);
         }
-        l2.Vdd = VPRE; l2.Rd = 56e3; l2.src.clear(); l2.src.R(0, -1, 2200); l2.build(fs);
-        { auto& n = lN2; n.clear(); n.rs = 1; n.inj = 1; n.C(0, 1, 220e-9); n.R(1, 2, 470e3); n.C(1, 2, 470e-12); n.R(2, -1, 180e3); n.out = 2; n.build(fs); }
-        l34.a.Vdd = VPRE; l34.a.Rd = 56e3; l34.a.Rs1 = 0; l34.a.Rs2 = 1800; l34.a.Cs = 0; l34.Rf = 10e3;
-        {
-            const double t = clampd(p.treble / 10, 0.002, 0.998), b = clampd(taperA(p.bass / 10), 0.001, 0.999), m = clampd(p.middle / 10, 0.002, 0.998);
-            auto& n = lN3; n.clear(); n.rs = 100;   // the follower, buffered (its own ~1k output resistance / 10)
-            n.C(0, 1, 4.7e-9); n.R(1, 2, 22e3 * (1 - t) + 0.1); n.R(2, 3, 22e3 * t + 0.1);   // 2 = treble wiper
-            n.R(0, 4, 3.3e3); n.C(4, 3, 220e-9); n.R(3, 5, 100e3 * b + 0.1); n.C(4, 5, 220e-9); n.R(5, -1, 2.2e3 * m + 5);
-            n.R(2, 8, 150e3);                                                                                   // channel balance
-            n.R(8, 6, 100e3 * (1 - ma) + 0.1); n.R(6, -1, 100e3 * ma + 0.1); n.C(6, 7, 1e-6); n.R(7, -1, 100e3);   // Master, LTP gate
-            n.out = 7; n.build(fs);
+        if (donNew != don && !first) {
+            if (donNew && xf == 0) { qd.settle(); dN.initDC(q1.vd0); }   // switching the stage in: it starts at its operating point
+            xf = XF - xf;                                                  // a reversal mid-fade continues from where it is
         }
+        don = donNew;
         // Miller input capacitance of each J201 at its operating point, at its gate node
         // ---- power: long-tailed pair (J201 x2, 22k drains, 30k tail, +/-15 V), coupling into the LM3886, feedback with Presence
         { auto& n = cpl; n.clear(); n.rs = 1; n.C(0, -1, CCOMP); n.C(0, 1, 1e-6); n.R(1, -1, 47e3); n.out = 1; n.build(fs); }   // CCOMP: dominant-pole compensation at the pair's output
