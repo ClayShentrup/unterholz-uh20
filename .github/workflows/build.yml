@@ -39,7 +39,17 @@ jobs:
           ditto "$A/CLAP/Unterholz UH-20.clap" "$D/CLAP/Unterholz UH-20.clap"
           ditto "$A/Standalone/Unterholz UH-20.app" "$D/Standalone/Unterholz UH-20.app"
           cp docs/INSTALL-macOS.txt "$D/INSTALL.txt"
-          cd dist && ditto -c -k --keepParent Unterholz-UH-20-macOS Unterholz-UH-20-macOS.zip
+          cd dist && ditto -c -k --keepParent Unterholz-UH-20-macOS Unterholz-UH-20-macOS.zip && cd ..
+          # installer package (used by the Homebrew cask): the same bundles in the system-wide plug-in folders
+          R="pkgroot"
+          mkdir -p "$R/Library/Audio/Plug-Ins/VST3" "$R/Library/Audio/Plug-Ins/Components" "$R/Library/Audio/Plug-Ins/CLAP" "$R/Applications"
+          ditto "$A/VST3/Unterholz UH-20.vst3" "$R/Library/Audio/Plug-Ins/VST3/Unterholz UH-20.vst3"
+          ditto "$A/AU/Unterholz UH-20.component" "$R/Library/Audio/Plug-Ins/Components/Unterholz UH-20.component"
+          ditto "$A/CLAP/Unterholz UH-20.clap" "$R/Library/Audio/Plug-Ins/CLAP/Unterholz UH-20.clap"
+          ditto "$A/Standalone/Unterholz UH-20.app" "$R/Applications/Unterholz UH-20.app"
+          for b in "$R"/Library/Audio/Plug-Ins/*/"Unterholz UH-20".* "$R/Applications/Unterholz UH-20.app"; do codesign --force --deep -s - "$b"; done
+          V="${GITHUB_REF_NAME#v}"; case "$V" in [0-9]*) ;; *) V="0.0.0";; esac
+          pkgbuild --root "$R" --install-location / --identifier com.unterholz.uh20.pkg --version "$V" dist/Unterholz-UH-20.pkg
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -55,7 +65,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Unterholz-UH-20-${{ matrix.name }}
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.pkg
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -70,5 +82,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/*.pkg
           generate_release_notes: true
