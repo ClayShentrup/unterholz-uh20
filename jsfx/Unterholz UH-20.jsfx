@@ -1,0 +1,370 @@
+desc:Unterholz UH-20 JFET preamp
+// UNTERHOLZ UH-20 -- two channels. RHYTHM: Studio-Pre-style (below). LEAD: Marshall topology fitted to measured Plexi/JTM45/JCM800 captures:
+// Q1 -> ANTRIEB -> high-gain stage -> 106 Hz coupling -> asymmetric second stage -> cathode follower -> Marshall-style stack -> output stage.
+// RHYTHM circuit model of the proposed JFET box: J201 stage -> Jubilee LED clipper -> Mark III tone stack -> Volume
+// -> J201 stage -> J201 stage with Sag (supply droop) -> 20/20-style presence stage -> Master -> AMP out / analog cab sim (REC out).
+// Signals are modelled in volts. Reference implementation for the C++ plugin (source/dsp/UH20Engine.h).
+//tags: guitar preamp amp
+//author: Unterholz contributors (AGPL-3.0-or-later)
+
+slider1:vol_k=5<0,10,0.1>-Volume
+slider2:tre_k=3<0,10,0.1>-Treble
+slider3:mid_k=7<0,10,0.1>-Middle
+slider4:bas_k=5<0,10,0.1>-Bass
+slider5:pre_k=5<0,10,0.1>-Presence
+slider6:jub_k=0<0,10,0.1>-Jubilee (LED clip)
+slider7:sag_k=0<0,10,0.1>-Sag
+slider8:mas_k=6.5<0,10,0.1>-Master
+slider9:bright=0<0,1,1{Off,On}>-Bright
+slider10:shift=0<0,1,1{Off,On}>-Shift (bass)
+slider11:outsel=0<0,2,1{4x12 cab,REC out (analog cab sim),AMP out (no cab)}>-Output
+slider12:vcal=1.6<0.1,4,0.01>-Input: volts at 0 dBFS
+slider13:trim=0<-24,24,0.1>-Output trim (dB)
+slider14:chan=0<0,1,1{Rhythm,Lead}>-Channel
+slider15:drv_k=5<0,10,0.1>-Lead drive
+
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+
+@init
+OS = 8; FSI = srate*OS; KI = 2*FSI;
+GM = 0.0009;
+VT = 0.02585; NLED = 2.0; ISLED = 0.01/exp(1.8/(NLED*VT));
+ext_tail_size = -1;
+
+function tapA(x) ( x<=0.5 ? 0.2*x : 0.1+1.8*(x-0.5) );
+function clampv(x,lo,hi) ( x<lo?lo:(x>hi?hi:x) );
+
+// ---- generic biquad (also used for 1st order with b2=a2=0)
+function bq_set(nb0,nb1,nb2,na1,na2) instance(b0,b1,b2,a1,a2) ( b0=nb0; b1=nb1; b2=nb2; a1=na1; a2=na2; );
+function bq(x) instance(b0,b1,b2,a1,a2,z1,z2) local(y) ( y=b0*x+z1; z1=b1*x-a1*y+z2; z2=b2*x-a2*y; y; );
+// analog (n0 + n1 s)/(d0 + d1 s), bilinear with constant K
+function fo_analog(n0,n1,d0,d1,K) local(n) ( n=d0+d1*K; this.bq_set((n0+n1*K)/n,(n0-n1*K)/n,0,(d0-d1*K)/n,0); );
+// analog (n0 + n1 s + n2 s^2)/(d0 + d1 s + d2 s^2)
+function so_analog(n0,n1,n2,d0,d1,d2,K) local(n) (
+  n=d0+d1*K+d2*K*K;
+  this.bq_set((n0+n1*K+n2*K*K)/n,(2*n0-2*n2*K*K)/n,(n0-n1*K+n2*K*K)/n,(2*d0-2*d2*K*K)/n,(d0-d1*K+d2*K*K)/n);
+);
+function pw(f,fs) local(w) ( w=2*$pi*f; w/tan(w/(2*fs)); );  // prewarped K for corner f
+function hp2(f,Q,fs) local(w) ( w=2*$pi*f; this.so_analog(0,0,1,w*w,w/Q,1,pw(f,fs)); );
+function lp2(f,Q,fs) local(w) ( w=2*$pi*f; this.so_analog(w*w,0,0,w*w,w/Q,1,pw(f,fs)); );
+function bp2(f,Q,fs) local(w) ( w=2*$pi*f; this.so_analog(0,w/Q,0,w*w,w/Q,1,pw(f,fs)); );
+function bw4_set(f,fs) ( this.s1.lp2(f,0.5098,fs); this.s2.lp2(f,0.6013,fs); this.s3.lp2(f,0.9000,fs); this.s4.lp2(f,2.5629,fs); );
+function bw4(x) ( this.s4.bq(this.s3.bq(this.s2.bq(this.s1.bq(x)))); );   // 8th-order Butterworth
+
+function th(x) local(e) ( x>20?1:(x<-20?-1:(e=exp(2*x); (e-1)/(e+1))); );
+// ---- JFET drain shaper: linear swing v -> limited swing (soft toward cutoff, firmer knee toward the ohmic region)
+function jshape(v,lu,ld,p,c) local(y) (
+  // JFET stage: nearly linear (slight square-law even harmonic), then a knee as the drain nears cutoff (lu) or the ohmic region (ld);
+  // p sets how sharp the knee is (higher = more linear until the limit)
+  v = v - c*v*v/(1 + pow(abs(v)/3,3));
+  y = v > 0 ? v/pow(1+pow(v/lu,p),1/p) : v/pow(1+pow(-v/ld,p),1/p);
+  y;
+);
+// ---- tone stack: 6-node nodal model, trapezoidal caps, matrix inverted when knobs change
+// nodes: 0 A(stack input), 1 tt, 2 w(out), 3 tb, 4 x, 5 mt
+M  = 1000;   // 6x6 matrix
+MI = 1100;   // inverse
+RHS = 1200; V = 1210;
+function madd(i,j,g) ( M[i*6+j] += g; );
+function stampG(p,q,g) ( p>=0 ? madd(p,p,g); q>=0 ? madd(q,q,g); (p>=0 && q>=0) ? (madd(p,q,-g); madd(q,p,-g);); );
+function invert6() local(i,j,k,piv,f,A) (
+  A = 1300; // augmented 6x12
+  i=0; loop(6, j=0; loop(6, A[i*12+j]=M[i*6+j]; A[i*12+6+j]=(i==j); j+=1;); i+=1;);
+  k=0; loop(6,
+    piv=A[k*12+k]; j=0; loop(12, A[k*12+j]/=piv; j+=1;);
+    i=0; loop(6, i!=k ? ( f=A[i*12+k]; j=0; loop(12, A[i*12+j]-=f*A[k*12+j]; j+=1;); ); i+=1;);
+    k+=1;);
+  i=0; loop(6, j=0; loop(6, MI[i*6+j]=A[i*12+6+j]; j+=1;); i+=1;);
+);
+RSRC = 55000 + 4700;   // Q1 drain Thevenin + series feed to the Jubilee node
+CT=0.00000000025; CB=0.0000001; CM=0.000000047;
+GCT=2*CT*FSI; GCB=2*CB*FSI; GCM=2*CM*FSI;
+function stack_build() local(tq,bq2,mq,ii) (
+  // NB: EEL2 names are case-insensitive - never name a local m/v/a here (they would shadow the M/V memory bases)
+  tq=clampv(tre_k/10,0.0004,0.9996); bq2=max(tapA(bas_k/10),0.0004); mq=max(mid_k/10,0.004);
+  ii=0; loop(36, M[ii]=0; ii+=1;);
+  stampG(0,-1,1/RSRC);
+  stampG(1,2,1/(250000*(1-tq))); stampG(2,3,1/(250000*tq));
+  stampG(0,4,1/100000); stampG(3,5,1/(250000*bq2)); stampG(5,-1,1/(25000*mq)); stampG(2,-1,1/1000000);
+  stampG(0,1,GCT); stampG(4,3,GCB); stampG(4,5,GCM);
+  invert6();
+);
+jct=jcb=jcm=0; ict=icb=icm=0;
+function stack(vs) local(i,j,s,vct,vcb,vcm) (
+  i=0; loop(6, RHS[i]=0; i+=1;);
+  RHS[0] = vs/RSRC;
+  // companion sources (J into p, out of q)
+  RHS[0]+=jct; RHS[1]-=jct;  RHS[4]+=jcb; RHS[3]-=jcb;  RHS[4]+=jcm; RHS[5]-=jcm;
+  i=0; loop(6, s=0; j=0; loop(6, s+=MI[i*6+j]*RHS[j]; j+=1;); V[i]=s; i+=1;);
+  vct=V[0]-V[1]; vcb=V[4]-V[3]; vcm=V[4]-V[5];
+  ict=GCT*vct-jct; icb=GCB*vcb-jcb; icm=GCM*vcm-jcm;
+  jct=GCT*vct+ict; jcb=GCB*vcb+icb; jcm=GCM*vcm+icm;
+  V[2];
+);
+
+// ---- LED clipper (1 red LED one way, 2 in series the other) behind the Jubilee pot, Newton per sample
+ledvd=0;
+// solve a = x + rt*Is*(exp(x/(n*VT))-1) for the LED voltage x in [0,a]: safeguarded Newton (cannot diverge)
+function led(vo,rt) local(dir,n,av,lo,hi,x,ex,f,df,xn) (
+  dir = vo>=0 ? 1 : -1; n = dir>0 ? NLED : 2*NLED; av = abs(vo);
+  lo = 0; hi = av; x = ledvd*dir; (x<lo || x>hi) ? x = 0.5*av;
+  loop(10,
+    ex = exp(x/(n*VT)); f = av - x - rt*ISLED*(ex-1); df = -1 - rt*ISLED*ex/(n*VT);
+    f > 0 ? lo = x : hi = x;
+    xn = x - f/df; x = (xn>lo && xn<hi) ? xn : 0.5*(lo+hi);
+  );
+  ledvd = dir*x;
+  dir*ISLED*(exp(x/(n*VT))-1);
+);
+
+envs=0; bplus=17; needupd=0; drag=-1; lastcap=0;
+
+// ---- BOX: optional cabinet impulse response. Put your own 48 kHz mono IR at REAPER/Data/amp_models/UH-20/uh20_cab_4x12.wav;
+//      without one, BOX behaves like REC (analog cab sim), uniform partitioned FFT convolution
+CB = 512; CN = 1024; CP = 4;                 // block, FFT size, partitions (IR up to 2048 samples)
+IRB = 400000; HB = 131072; XB = 196608; WB = 262144; AB = 270336; TB = 278528; INB = 290000; OUTB = 291000; OVB = 292000;
+memset(IRB,0,4096);
+fh = file_open("amp_models/UH-20/uh20_cab_4x12.wav");
+irn = 0;
+fh >= 0 ? (
+  file_riff(fh, irch, irsr);
+  irn = min(file_avail(fh)/max(irch,1), CB*CP);
+  irch == 1 ? file_mem(fh, IRB, irn) : ( i=0; loop(irn, file_var(fh, IRB[i]); loop(irch-1, file_var(fh, tmpv)); i+=1;); );
+  file_close(fh);
+);
+// normalise to unit energy
+e=0; i=0; loop(irn, e+=IRB[i]*IRB[i]; i+=1;); e = e>0 ? 1/sqrt(e) : 0; i=0; loop(irn, IRB[i]*=e; i+=1;);
+pp=0; loop(CP,
+  memset(WB,0,2*CN); i=0; loop(CB, WB[2*i]=IRB[pp*CB+i]; i+=1;);
+  fft(WB,CN); memcpy(HB+pp*2*CN, WB, 2*CN);
+  pp+=1;);
+memset(XB,0,2*CN*CP); memset(INB,0,CB); memset(OUTB,0,CB); memset(OVB,0,CB);
+cpos=0; cring=0;
+pdc_delay = CB; pdc_bot_ch = 0; pdc_top_ch = 2;
+function cabconv(x) local(yv,pp,k,src) (
+  INB[cpos] = x; yv = OUTB[cpos]; cpos += 1;
+  cpos >= CB ? (
+    memset(WB,0,2*CN); k=0; loop(CB, WB[2*k]=INB[k]; k+=1;);
+    fft(WB,CN); memcpy(XB+cring*2*CN, WB, 2*CN);
+    memset(AB,0,2*CN);
+    pp=0; loop(CP,
+      src = XB + ((cring - pp + CP) % CP)*2*CN;
+      memcpy(TB, src, 2*CN); convolve_c(TB, HB+pp*2*CN, CN);
+      k=0; loop(2*CN, AB[k]+=TB[k]; k+=1;);
+      pp+=1;);
+    ifft(AB,CN);
+    k=0; loop(CB, OUTB[k] = AB[2*k]/CN + OVB[k]; OVB[k] = AB[2*(k+CB)]/CN; k+=1;);
+    cring = (cring+1) % CP; cpos = 0;
+  );
+  yv;
+);
+function peq_set8(f0,gdb,q,fsr) local(A,w,al,a0) (
+  A=10^(gdb/40); w=2*$pi*f0/fsr; al=sin(w)/(2*q); a0=1+al/A;
+  this.bq_set((1+al*A)/a0, -2*cos(w)/a0, (1-al*A)/a0, -2*cos(w)/a0, (1-al/A)/a0);
+);
+// Studio-Pre-style 5-band graphic EQ after the distortion (fixed voicing for the 4x12 path), fitted 2026-11-26
+function peq_set(f0,gdb,q) local(A,w,al,a0) (
+  A=10^(gdb/40); w=2*$pi*f0/srate; al=sin(w)/(2*q); a0=1+al/A;
+  this.bq_set((1+al*A)/a0, -2*cos(w)/a0, (1-al*A)/a0, -2*cos(w)/a0, (1-al/A)/a0);
+);
+ge1.peq_set(80,3.92,1.41); ge2.peq_set(240,1.46,1.41); ge3.peq_set(750,7.75,1.41); ge4.peq_set(2200,5.00,1.41); ge5.peq_set(6600,9.66,1.41);
+
+
+function upd() (
+// Q1: J201 at ~0.1 mA, Rd 68k, Rs = 3.3k + 1.5k || 0.68u (Shift adds 22u).
+// Jubilee is a dual-gang 100k reverse-log pot: gang A bypasses the 3.3k (via 10u) to drive Q1 up to ~+10 dB into the LEDs,
+// gang B connects the LED pair. At 0 both gangs are ~100k (out of circuit).
+GM1 = 0.00061; RTH1 = 55000;
+// gang B: 470k reverse-log + click-off switch at 0 (LEDs fully out); gang A: 100k reverse-log bypassing the 3.3k
+jon = jub_k >= 0.05;
+rj = 220 + 470000*tapA(1-jub_k/10);
+rg = 220 + 100000*tapA(1-jub_k/10);
+ru = jon ? 3300*rg/(3300+rg) : 3300;
+cb1 = 0.00000068 + (shift ? 0.000022 : 0); tb1 = 1500*cb1;
+q1.fo_analog(-GM1*RTH1, -GM1*RTH1*tb1, 1+GM1*(ru+1500), tb1*(1+GM1*ru), KI);
+stack_build();
+// Volume 1M A with optional 100p bright cap across the upper section
+vv=clampv(tapA(vol_k/10),0.0005,0.9995); rup=1000000*(1-vv); rlo=1000000*vv; cbr = bright ? 0.0000000001 : 0;
+volf.fo_analog(rlo, rlo*rup*cbr, rlo+rup, rlo*rup*cbr, KI);
+cc2.fo_analog(0, 0.000000022*1000000, 1, 0.000000022*1000000, KI);                       // 22n into 1M
+// Q2: J201, Rd 47k, Rs 2.2k || 22u; drain Thevenin 32k loaded by the 108k pad
+q2.fo_analog(-GM*24700, -GM*24700*2200*0.000022, 1+GM*2200, 2200*0.000022, KI);
+cc4.fo_analog(0, 0.000000022*106800, 1, 0.000000022*106800, KI);          // 22n into the 100k/6.8k interstage divider
+// Q3: J201 (the Studio Pre's second rhythm gain stage), Rd 47k from the SAG supply, Rs 2.2k || 22u
+q3.fo_analog(-GM*24700, -GM*24700*2200*0.000022, 1+GM*2200, 2200*0.000022, KI);
+cc3.fo_analog(0, 0.0000001*160000, 1, 0.0000001*160000, KI);                 // 100n into the 150k/10k pad
+// power-amp sim: pad 33/108, op-amp gain 1 + 10k/(Rp + 1/sC), Rp = 4.7k + 50k*(1-presence)
+rp = 4700 + 50000*(1-pre_k/10);
+pres.fo_analog(1, 0.000000022*(rp+10000), 1, 0.000000022*rp, KI);
+pdrive = 10^((-3.5 + 3.6*mas_k)/20);                                // SUMME: drive into the power stage, 6.5 = the studio clean tone
+H2C = 0.051;
+sagd = sag_k/10;
+// LEAD channel
+LGA=45.3133; LPA=5.1334; LCA=0.0000; LGB=0.3514; LBU=11.8858; LBD=1.6598; LPB=2.1891; LCB=0.0000; LLC=8.9370; LLG=0.02909; LPP=9.3287;
+ldrv = 10^((-30 + 4*drv_k)/20);                                      // ANTRIEB: -30 dB .. +10 dB into the high-gain stage
+lhp.fo_analog(0, 1, 2*$pi*106.28, 1, KI);                          // coupling cap after the first lead stage
+lpdrv = LLG*10^((-2 + 3.2*mas_k)/20);                               // SUMME in LEAD: output-stage drive
+// Marshall-style tone controls after the distortion (approximation of the TMB stack, driven by the cathode follower)
+mlb.peq_set8(120, (bas_k-5)*2.2, 0.7, FSI); mmd.peq_set8(650, (mid_k-5)*1.8 - 2, 0.8, FSI); mtr.peq_set8(2500, (tre_k-5)*2.0, 0.7, FSI);
+// anti-alias filters (4x)
+aaup.bw4_set(18000,FSI); aadn.bw4_set(18000,FSI);
+// cab sim at the base rate: E96 values realise these (fitted to a measured studio clean tone at Volume 5, Treble 3, Middle 7, Bass 5, Presence 5)
+chp.hp2(98.120,0.7254,FSI);
+cp1.bp2(258.815,1.1821,FSI); a1 = 10^(9.7496/20)-1;
+cp2.bp2(3002.089,2.0740,FSI); a2 = 10^(10.6133/20)-1;
+clp1.lp2(4943.99,1.0067,FSI); clp2.lp2(4943.99,1.0067,FSI);
+csc = 4.12/14.12;
+att = 1-exp(-1/(0.015*FSI)); rel = 1-exp(-1/(0.12*FSI));
+gout = 10^(trim/20) / ((outsel == 2 || (outsel == 0 && irn > 0)) ? 2.0 : 0.5);
+CABG = 0.044;
+);
+
+
+@slider
+upd();
+
+@block
+needupd ? (upd(); needupd=0;);
+
+@sample
+xin = (spl0+spl1)*0.5*vcal;
+k=0; ydec=0;
+loop(OS,
+  u = aaup.bw4(k==0 ? xin*OS : 0);
+  v1 = jshape(q1.bq(u), 6, 10, 6, H2C);                     // Q1 drain swing (inverting)
+  il = jon ? led(v1, RSRC + rj) : 0;
+  chan == 0 ? (
+    w = stack(v1 - il*RSRC);                              // post-clip Mark III stack
+    g2 = cc2.bq(volf.bq(w));
+    v2 = jshape(q2.bq(g2), 9, 6.8, 4, 0.01);
+    g3 = cc4.bq(v2)*6.8/106.8;
+    v3 = jshape(q3.bq(g3), 9, 6.8, 4, 0.01);
+    po = pres.bq(cc3.bq(v3)*10/160);
+    po = 8.3*th(po/8.3);
+    // 20/20 power stage: long-tailed pair (tanh), SUMME = drive into it. Dyna-Watt sag on its supply.
+    lp = 1 - (0.06 + sagd*0.5)*min(envs,1);
+    yy = lp*th(po*pdrive/lp);
+  ) : (
+    // LEAD: high-gain stage, coupling, asymmetric second stage, cathode follower, Marshall-style stack, output stage with sag
+    la = jshape(LGA*ldrv*(v1 - il*RSRC*0.5), 9, 6.8, LPA, LCA);
+    lb = jshape(LGB*lhp.bq(la), LBU, LBD, LPB, LCB);
+    lb = lb > 0 ? LLC*th(lb/LLC) : lb;
+    lb = mtr.bq(mmd.bq(mlb.bq(lb)));
+    lu = pres.bq(lb)*lpdrv;
+    lp = 1 - (0.06 + sagd*0.5)*min(envs,1);
+    yy = lp*(lu/lp)/pow(1+pow(abs(lu/lp),LPP),1/LPP);
+  );
+  a = abs(yy); envs += (a > envs ? att : rel)*(a - envs);
+  (outsel == 2 || (outsel == 0 && irn > 0)) ? ( zz = yy; ) : (
+    c = chp.bq(yy*csc);
+    c = c + a1*cp1.bq(c) + a2*cp2.bq(c);
+    zz = clp2.bq(clp1.bq(c));
+  );
+  zz = aadn.bw4(zz);
+  k==0 ? (ydec = zz;);
+  k+=1;
+);
+outsel == 0 && irn > 0 ? ( ydec = cabconv(ge5.bq(ge4.bq(ge3.bq(ge2.bq(ge1.bq(ydec)))))) * CABG; );
+spl0 = spl1 = ydec*gout;
+
+@gfx 900 338
+function col(r,g,b) ( gfx_r=r; gfx_g=g; gfx_b=b; gfx_a=1; );
+function ctext(str,cx,y) local(w,h) ( gfx_measurestr(str,w,h); gfx_x=cx-w/2; gfx_y=y; gfx_drawstr(str); );
+function spaced(str,x,y,sp) local(i,n,c,w,h) (
+  n=strlen(str); i=0; gfx_x=x; gfx_y=y;
+  loop(n, c=str_getchar(str,i); gfx_drawchar(c); gfx_x+=sp; i+=1;);
+);
+function knobx(i) ( 56 + i*90 + (i>=6 ? 14 : 0) );
+function ksl(i) ( i==0 ? 1 : i==1 ? 15 : i==2 ? 2 : i==3 ? 3 : i==4 ? 4 : i==5 ? 5 : i==6 ? 6 : i==7 ? 7 : 8 );
+KY = 150; KR = 27;
+// panel
+col(.86,.85,.81); gfx_rect(0,0,gfx_w,gfx_h);
+col(.08,.08,.08); gfx_rect(0,0,gfx_w,56);
+gfx_setfont(1,"Helvetica Neue",30,'b'); col(.95,.94,.90); spaced("UNTERHOLZ",26,12,7);
+col(.88,.36,.12); gfx_rect(gfx_w-30,14,10,28);
+gfx_setfont(2,"Helvetica Neue",12,'b'); col(.80,.79,.75); gfx_x=gfx_w-300; gfx_y=14; gfx_drawstr("UH-20   JFET-VORVERSTÄRKER");
+gfx_setfont(3,"Helvetica Neue",11); col(.55,.55,.52); gfx_x=gfx_w-300; gfx_y=31; gfx_drawstr("OPEN HARDWARE  /  ENTWURF 11.2026");
+// grid
+col(.70,.69,.65); gfx_line(20,74,gfx_w-20,74); gfx_line(20,232,gfx_w-20,232);
+gfx_line(knobx(5)+52,84,knobx(5)+52,222); gfx_line(knobx(7)+52,84,knobx(7)+52,222);
+gfx_setfont(3); col(.40,.40,.38);
+gfx_x=24; gfx_y=80; gfx_drawstr("VORSTUFE / preamp");  gfx_x=knobx(6)-40; gfx_drawstr("CHARAKTER");  gfx_x=knobx(8)-40; gfx_drawstr("AUSGANG");
+// knobs
+i=0;
+loop(9,
+  cx=knobx(i); v=slider(ksl(i)); a=(-135+270*v/10)*$pi/180;
+  col(.35,.35,.33); t=0; loop(11, ta=(-135+27*t)*$pi/180; gfx_line(cx+sin(ta)*(KR+5),KY-cos(ta)*(KR+5),cx+sin(ta)*(KR+9),KY-cos(ta)*(KR+9)); t+=1;);
+  col(.12,.12,.12); gfx_circle(cx,KY,KR,1,1);
+  col(.22,.22,.21); gfx_circle(cx,KY,KR-6,0,1);
+  (i==6 || i==7) ? col(.88,.36,.12) : (i==1 && slider(14)==0) ? col(.45,.45,.43) : col(.96,.95,.92);
+  d=-1; loop(3, gfx_line(cx+sin(a)*6+d*cos(a),KY-cos(a)*6+d*sin(a),cx+sin(a)*(KR-3)+d*cos(a),KY-cos(a)*(KR-3)+d*sin(a)); d+=1;);
+  gfx_setfont(2); col(.10,.10,.10);
+  lb = i==0 ? "LAUT" : i==1 ? "ANTRIEB" : i==2 ? "HÖHEN" : i==3 ? "MITTEN" : i==4 ? "TIEFEN" : i==5 ? "PRÄSENZ" : i==6 ? "JUBILÄUM" : i==7 ? "DURCHHANG" : "SUMME";
+  en = i==0 ? "rhythm volume" : i==1 ? "lead drive" : i==2 ? "treble" : i==3 ? "middle" : i==4 ? "bass" : i==5 ? "presence" : i==6 ? "LED clip" : i==7 ? "sag" : "master";
+  ctext(lb,cx,KY+44);
+  gfx_setfont(3); col(.42,.42,.40); ctext(en,cx,KY+59);
+  sprintf(#vs,"%.1f",v); col(.10,.10,.10); ctext(#vs,cx,KY-KR-26);
+  i+=1;
+);
+// switches
+function sw(x,y,w,on,lbl,en) ( col(.10,.10,.10); gfx_rect(x,y,w,22,0); on ? (col(.88,.36,.12); gfx_rect(x+2,y+2,w-4,18,1);); gfx_setfont(2); on ? col(.97,.96,.93) : col(.10,.10,.10); ctext(lbl,x+w/2,y+5); gfx_setfont(3); col(.42,.42,.40); ctext(en,x+w/2,y+26); );
+SY=248;
+sw(26,SY,84,slider(14)==0,"RHYTHMUS","clean"); sw(112,SY,62,slider(14)==1,"LEAD","drive");
+sw(204,SY,62,slider(9),"HELL","bright"); sw(268,SY,62,slider(10),"TIEF","shift");
+sw(360,SY,62,slider(11)==0,"BOX","4x12 cab"); sw(424,SY,62,slider(11)==1,"REC","analog cab"); sw(488,SY,62,slider(11)==2,"AMP","no cab");
+gfx_setfont(3); col(.40,.40,.38); sprintf(#info,"EINGANG %.2f V = 0 dBFS     TRIM %+.1f dB",slider(12),slider(13)); gfx_x=gfx_w-310; gfx_y=SY+6; gfx_drawstr(#info);
+// hover help strip
+hv = -1; mxh=mouse_x; myh=mouse_y;
+i=0; loop(9, ((mxh-knobx(i))^2+(myh-KY)^2 < (KR+12)^2) ? (hv=i;); i+=1;);
+myh>=SY && myh<=SY+36 ? (
+  mxh>=26 && mxh<=110 ? (hv=20;); mxh>=112 && mxh<=174 ? (hv=21;); mxh>=204 && mxh<=266 ? (hv=22;); mxh>=268 && mxh<=330 ? (hv=23;);
+  mxh>=360 && mxh<=422 ? (hv=24;); mxh>=424 && mxh<=486 ? (hv=25;); mxh>=488 && mxh<=550 ? (hv=26;);
+);
+hs = hv==0 ? "LAUT (rhythm volume): gain of the clean channel. Clean up to about 5, edge of breakup at 6-7, crunch above." :
+     hv==1 ? "ANTRIEB (lead drive): gain of the LEAD channel only. Low = edge-of-breakup crunch, about 5 = creamy crunch, 8-10 = saturated." :
+     hv==2 ? "HOEHEN (treble): top end. In RHYTHMUS the tone controls come before the gain stages, so more treble also means more gain." :
+     hv==3 ? "MITTEN (middle): midrange body. In LEAD it works after the distortion, so it shapes the crunch without changing the gain." :
+     hv==4 ? "TIEFEN (bass): low end. In RHYTHMUS keep it at 5 or below; above that the low end gets loose." :
+     hv==5 ? "PRAESENZ (presence): upper-mid bite from the power stage's feedback loop. 0 = smooth and dark, 10 = cutting." :
+     hv==6 ? "JUBILAEUM (LED clip): Jubilee-style LED clipping before the tone stack. 0 = off. Higher = smoother, lopsided clipping, same loudness." :
+     hv==7 ? "DURCHHANG (sag): power-supply sag. Higher = hard chords squash right after the pick, then bloom back over about a tenth of a second." :
+     hv==8 ? "SUMME (master): drive into the power stage. RHYTHMUS: 6.5 = the studio clean tone. LEAD: higher = more power-amp crunch." :
+     hv==20 ? "RHYTHMUS: the clean channel (studio-preamp style). Use LAUT for its gain." :
+     hv==21 ? "LEAD: the drive channel (Marshall-style). Use ANTRIEB for its gain; SUMME adds power-amp crunch." :
+     hv==22 ? "HELL (bright): treble bleed across LAUT. Adds sparkle at low LAUT settings and fades out as LAUT goes up." :
+     hv==23 ? "TIEF (bass shift): lets more low end into the first stage. Fatter, warmer; a little looser." :
+     hv==24 ? "BOX: output through a recorded 4x12 cabinet. Use it for recording straight into the DAW." :
+     hv==25 ? "REC: the simple analog cab-sim output the hardware box has on its REC jack." :
+     hv==26 ? "AMP: no cabinet. For feeding a real amp and speaker, or your own cabinet impulse response." :
+     "Point at any knob or switch to see what it does.";
+col(.08,.08,.08); gfx_rect(0,gfx_h-34,gfx_w,34);
+gfx_setfont(3); hv>=0 ? col(.95,.94,.90) : col(.55,.55,.52); gfx_x=26; gfx_y=gfx_h-24; gfx_drawstr(hs);
+hv>=0 ? (col(.88,.36,.12); gfx_rect(12,gfx_h-24,6,14);); 
+// mouse
+mx=mouse_x; my=mouse_y;
+(mouse_cap&1) ? (
+  !lastcap ? (
+    drag=-1; i=0; loop(9, ((mx-knobx(i))^2+(my-KY)^2 < (KR+10)^2) ? (drag=i;); i+=1;);
+    drag<0 && my>=SY && my<=SY+22 ? (
+      mx>=26 && mx<=110 ? (slider(14)=0; slider_automate(2^13); needupd=1;);
+      mx>=112 && mx<=174 ? (slider(14)=1; slider_automate(2^13); needupd=1;);
+      mx>=204 && mx<=266 ? (slider(9)=1-slider(9); slider_automate(2^8); needupd=1;);
+      mx>=268 && mx<=330 ? (slider(10)=1-slider(10); slider_automate(2^9); needupd=1;);
+      mx>=360 && mx<=422 ? (slider(11)=0; slider_automate(2^10); needupd=1;);
+      mx>=424 && mx<=486 ? (slider(11)=1; slider_automate(2^10); needupd=1;);
+      mx>=488 && mx<=550 ? (slider(11)=2; slider_automate(2^10); needupd=1;);
+    );
+    lasty=my;
+  ) : drag>=0 ? (
+    nv=slider(ksl(drag))+(lasty-my)*((mouse_cap&4) ? 0.01 : 0.05);
+    slider(ksl(drag))=min(max(nv,0),10); slider_automate(2^(ksl(drag)-1)); needupd=1; lasty=my;
+  );
+) : (drag=-1;);
+lastcap=mouse_cap&1;
+mouse_wheel != 0 ? (
+  i=0; loop(9, ((mx-knobx(i))^2+(my-KY)^2 < (KR+10)^2) ? (slider(ksl(i))=min(max(slider(ksl(i))+0.1*mouse_wheel/120,0),10); slider_automate(2^(ksl(i)-1)); needupd=1;); i+=1;);
+  mouse_wheel=0;
+);

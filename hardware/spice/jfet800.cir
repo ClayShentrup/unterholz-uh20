@@ -1,0 +1,54 @@
+* UH-20 LEAD (JCM800 topology in J201s, 18 V). Each stage = the curve-matched translation of the 2203 stage (match_stage.py).
+* Interstage dividers = tube divider x a(next) x b(prev), so every stage sees the scaled equivalent of the tube voltage.
+.include j201.lib
+.param AMP=0.1 PV=0.7
+VDD dd 0 DC 18
+VIN in 0 SIN(0 {AMP} 220)
+* --- input stage (V1b 100k/2.7k bypassed -> 27k / 1.5k bypassed, a=0.110): 1M/0.11 input divider is the noise-free way? use 100k:12k pad
+R1 in g1a 100k
+R1b g1a 0 27k
+J1 d1 g1a s1 J201
+RD1 dd d1 27k
+RS1 s1 0 1.5k
+CS1 s1 0 100u
+C1 d1 a1 220n
+* tube: 470k||470p -> 1M log volume (+1n bright). Scaled: x a_cc(0.110) x b_v1(17.7) = 1.95, so the attenuator becomes 470k||470p into 1M with the
+* volume wiper feeding the cold-clipper gate through a x1.95 ... (no gain available in a divider) -> scale instead by giving the volume full range and
+* feeding 1.95x more: use the tube network unchanged and let the stage-match absorb the 0.51 ratio via the cold clipper's own input scale.
+R3 a1 vt 470k
+C3 a1 vt 470p
+RV1 vt vw {1Meg*(1-PV)+1}
+RV2 vw 0 {1Meg*PV+1}
+CB vt vw 1n
+* --- cold clipper (100k/10k unbypassed -> 56k / 2.2k unbypassed)
+J2 d2 vw s2 J201
+RD2 dd d2 56k
+RS2 s2 0 2.2k
+C2 d2 a2 220n
+* tube interstage 470k||470p, 470k down (0.5) x a_v2a(0.127) x b_cc(4.3) = 0.273 -> 470k||470p, 220k down... 470/(470+176)=0.273 -> 180k
+R4 a2 g3 470k
+C4 a2 g3 470p
+R5 g3 0 180k
+* --- V2a (100k/820 -> 56k / 1.8k unbypassed)
+J3 d3 g3 s3 J201
+RD3 dd d3 56k
+RS3 s3 0 1.8k
+* --- source follower (the cathode follower), DC-coupled like the tube: gate on V2a's drain, 10k source resistor
+J4 dd d3 s4 J201
+RS4 s4 0 10k
+* --- Marshall stack (2203: 470p treble, 33k slope, 22n/22n; 220k lin treble @5, 1M bass @5 (~100k), 22k mid @5)
+C5 s4 tt 470p
+RT1 tt tw 110k
+RT2 tw tb 110k
+R6 s4 x 33k
+C6 x tb 22n
+RB tb mt 100k
+C7 x mt 22n
+RM mt 0 11k
+RMV tw 0 1Meg
+.tran 2u 0.2 0.1
+.control
+run
+wrdata jf800_out.txt v(s4) v(tw) v(d2) v(d1)
+.endc
+.end

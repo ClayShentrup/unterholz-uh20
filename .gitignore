@@ -1,0 +1,5 @@
+build/
+.tools/
+*.f32
+.DS_Store
+tools/uh20_cli

@@ -1,0 +1,41 @@
+* Marshall JTM45 preamp (drtube jtm45tr.gif values, marshall_values.md): one channel, volume = PV, input = AMP
+.include koren.lib
+.param AMP=0.1 PV=0.7
+VBP bp 0 DC 310
+VIN in 0 SIN(0 {AMP} 220)
+R1 in g1 68k
+R2 g1 0 1Meg
+XV1 p1 g1 k1 12AX7
+RP1 bp p1 100k
+RK1 k1 0 820
+CK1 k1 0 250u
+C1 p1 vt 20n
+* 1M log volume, 100p bright cap
+RV1 vt vw {1Meg*(1-PV)+1}
+RV2 vw 0 {1Meg*PV+1}
+CB vt vw 100p
+* 270k mixer into V2a, other channel's 270k to its grounded volume
+R3 vw g2 270k
+R4 g2 0 270k
+XV2 p2 g2 k2 12AX7
+RP2 bp p2 100k
+RK2 k2 0 820
+* V2b cathode follower straight off V2a's plate
+XV3 bp p2 k3 12AX7
+RK3 k3 0 100k
+* Bassman/JTM45 stack: 270p treble, 56k slope, 20n/20n; 250k lin treble @5, 1M log bass @5, 25k lin mid @5
+C5 k3 tt 270p
+RT1 tt tw 125k
+RT2 tw tb 125k
+R6 k3 x 56k
+C6 x tb 20n
+RB tb mt 100k
+C7 x mt 20n
+RM mt 0 12.5k
+RMV tw 0 1Meg
+.tran 2u 0.2 0.1
+.control
+run
+wrdata jtm45_out.txt v(k3) v(tw) v(p2) v(p1)
+.endc
+.end

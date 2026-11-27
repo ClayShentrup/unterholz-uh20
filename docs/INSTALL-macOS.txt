@@ -1,0 +1,13 @@
+Unterholz UH-20 for macOS (Apple Silicon and Intel)
+
+Copy each plug-in into its folder (create the folder if it does not exist):
+  VST3/Unterholz UH-20.vst3        ->  ~/Library/Audio/Plug-Ins/VST3/
+  AU/Unterholz UH-20.component     ->  ~/Library/Audio/Plug-Ins/Components/
+  CLAP/Unterholz UH-20.clap        ->  ~/Library/Audio/Plug-Ins/CLAP/
+  Standalone/Unterholz UH-20.app   ->  /Applications/
+
+These builds are not notarized by Apple yet. After copying, run this once in Terminal so macOS allows them:
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Unterholz UH-20.vst3" ~/Library/Audio/Plug-Ins/Components/"Unterholz UH-20.component" ~/Library/Audio/Plug-Ins/CLAP/"Unterholz UH-20.clap" /Applications/"Unterholz UH-20.app"
+
+Or install everything with Homebrew:
+  brew install --cask clayshentrup/unterholz/unterholz-uh20

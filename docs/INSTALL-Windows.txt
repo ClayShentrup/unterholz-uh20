@@ -1,0 +1,7 @@
+Unterholz UH-20 for Windows (64-bit)
+
+  VST3\Unterholz UH-20.vst3        ->  C:\Program Files\Common Files\VST3\
+  CLAP\Unterholz UH-20.clap        ->  C:\Program Files\Common Files\CLAP\
+  Standalone\Unterholz UH-20.exe   ->  anywhere you like
+
+Then rescan plug-ins in your DAW.

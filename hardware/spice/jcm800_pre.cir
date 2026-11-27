@@ -1,0 +1,51 @@
+* Marshall JCM800 2203 preamp (Marshall drawing 24-4-81, values per marshall_values.md), preamp volume = PV, input amplitude = AMP
+.include koren.lib
+.param AMP=0.1 PV=0.7
+VBP bp 0 DC 330
+VIN in 0 SIN(0 {AMP} 220)
+* V1b input stage
+R1 in g1 68k
+R2 g1 0 1Meg
+XV1 p1 g1 k1 12AX7
+RP1 bp p1 100k
+RK1 k1 0 2.7k
+CK1 k1 0 0.68u
+C1 p1 a1 22n
+* 470k || 470p attenuator into 1M log preamp volume (+1n bright cap)
+R3 a1 vt 470k
+C3 a1 vt 470p
+RV1 vt vw {1Meg*(1-PV)+1}
+RV2 vw 0 {1Meg*PV+1}
+CB vt vw 1n
+* V1a cold clipper: 10k cathode, unbypassed
+XV2 p2 vw k2 12AX7
+RP2 bp p2 100k
+RK2 k2 0 10k
+C2 p2 a2 22n
+* interstage 470k || 470p, 470k to ground
+R4 a2 g3 470k
+C4 a2 g3 470p
+R5 g3 0 470k
+* V2a: 100k / 820R (unbypassed)
+XV3 p3 g3 k3 12AX7
+RP3 bp p3 100k
+RK3 k3 0 820
+* V2b cathode follower, 100k cathode
+XV4 bp p3 k4 12AX7
+RK4 k4 0 100k
+* tone stack (470p treble, 33k slope, 22n/22n; 220k lin treble @5, 1M bass @5 (log ~10%), 22k mid @5)
+C5 k4 tt 470p
+RT1 tt tw 110k
+RT2 tw tb 110k
+R6 k4 x 33k
+C6 x tb 22n
+RB tb mt 100k
+C7 x mt 22n
+RM mt 0 11k
+RMV tw 0 1Meg
+.tran 2u 0.2 0.1
+.control
+run
+wrdata jcm800_out.txt v(k4) v(tw) v(p2) v(p1)
+.endc
+.end

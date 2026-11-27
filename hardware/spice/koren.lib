@@ -1,0 +1,15 @@
+* Koren 12AX7 (normankoren.com): MU 100, EX 1.4, KG1 1060, KP 600, KVB 300, RGI 2k, CCG 2.3p, CGP 2.4p, CCP 0.9p
+.SUBCKT 12AX7 P G K
+.PARAM MU=100 EX=1.4 KG1=1060 KP=600 KVB=300
+B1 7 0 V = V(P,K)/KP*ln(1+exp(KP*(1/MU+V(G,K)/sqrt(KVB+V(P,K)*V(P,K)))))
+R7 7 0 1G
+B2 P K I = 2*pow(max(V(7),0),EX)/KG1
+RCP P K 1G
+C1 G K 2.3p
+C2 G P 2.4p
+C3 P K 0.9p
+* grid conduction: diode + RGI
+D1 G 8 DGRID
+R8 8 K 2k
+.MODEL DGRID D(IS=1n RS=1 N=1.5)
+.ENDS

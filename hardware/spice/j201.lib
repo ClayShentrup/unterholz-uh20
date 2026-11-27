@@ -1,0 +1,2 @@
+* Fairchild/onsemi J201 (widely circulated vendor model)
+.model J201 NJF(Beta=1.304m Betatce=-.5 Rd=1 Rs=1 Lambda=2.8m Vto=-.5961 Vtotc=-2.5m Is=114.5f Isr=1.091p N=1 Nr=2 Xti=3 Alpha=20u Vk=105 Cgd=4.06p M=.3876 Pb=.5 Fc=.5 Cgs=3.002p Kf=60.54E-18 Af=.5)

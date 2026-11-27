@@ -1,0 +1,74 @@
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS
+          - os: windows-latest
+            name: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure (macOS, universal)
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build
+      - name: Build
+        run: cmake --build build --config Release --parallel 4 --target UnterholzUH20_All UnterholzUH20_CLAP
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          A="build/UnterholzUH20_artefacts/Release"
+          D="dist/Unterholz-UH-20-macOS"
+          mkdir -p "$D"
+          ditto "$A/VST3/Unterholz UH-20.vst3" "$D/VST3/Unterholz UH-20.vst3"
+          ditto "$A/AU/Unterholz UH-20.component" "$D/AU/Unterholz UH-20.component"
+          ditto "$A/CLAP/Unterholz UH-20.clap" "$D/CLAP/Unterholz UH-20.clap"
+          ditto "$A/Standalone/Unterholz UH-20.app" "$D/Standalone/Unterholz UH-20.app"
+          cp docs/INSTALL-macOS.txt "$D/INSTALL.txt"
+          cd dist && ditto -c -k --keepParent Unterholz-UH-20-macOS Unterholz-UH-20-macOS.zip
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $A = "build/UnterholzUH20_artefacts/Release"
+          $D = "dist/Unterholz-UH-20-Windows"
+          New-Item -ItemType Directory -Force -Path "$D/VST3","$D/CLAP","$D/Standalone" | Out-Null
+          Copy-Item -Recurse "$A/VST3/Unterholz UH-20.vst3" "$D/VST3/"
+          Copy-Item "$A/CLAP/Unterholz UH-20.clap" "$D/CLAP/"
+          Copy-Item "$A/Standalone/Unterholz UH-20.exe" "$D/Standalone/"
+          Copy-Item docs/INSTALL-Windows.txt "$D/INSTALL.txt"
+          Compress-Archive -Path $D -DestinationPath dist/Unterholz-UH-20-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Unterholz-UH-20-${{ matrix.name }}
+          path: dist/*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
