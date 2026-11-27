@@ -18,13 +18,87 @@ The deliverable is a schematic of ordinary parts. The plugin (`source/dsp/UH20En
 - First results: cold clipper 0.3%, gain stage 0.7%, input stage 1.0% of swing.
 - Interstage dividers are the tube divider × the next stage's input scale × the previous stage's output scale.
 
+## v0.3.1: a Drive that cannot block, a Sag that compresses (2026-11-27)
+
+**What was wrong.** At Drive 10, v0.3.0 dropped out: on the puzzle-remains lead DI, 9% of the loud 10 ms frames (AMP output) fell more
+than 6 dB under Drive 9, in 210 events up to 170 ms long, and the loud level fell 3.4 dB below Drive 9. The cause is the Drive stage's
+gate. The full pot put all of Q1's swing (several volts) on a J201 whose gate conducts about 0.6 V above its source; each peak charged
+the 1 uF coupling capacitor through the 1k feed, and it could only discharge through the ~100k pot, so the gate sat volts negative and
+the stage was cut off for tens of milliseconds (blocking distortion). ngspice shows the same: after a 0.1 s strum at 10x the playing
+level, the v0.3.0 Drive stage's drain sits at 18.00 V (off) from 0.10 to 0.15 s and the speaker falls from 17 V to 0.4 V rms. Q2 and Q3
+never blocked. The rest of the knob had too much gain as well: the noise between notes was only 17.5 dB under the playing at Drive 10
+(Hanwell at gain 10: 27.1 dB), and the stage had full bass gain ahead of three clipping stages.
+
+**Drive stage, v0.3.1.** Q1's follower -> 1k -> **47 nF** -> **100k** -> Drive pot (100k log) -> **3.3k** to ground; wiper -> **47k
+gate stopper** -> J201 (Rd 68k **|| 470 pF**, Rs 1.5k **|| 0.68 uF**, 18 V) -> rail-to-rail follower -> the stack's 6.8k feed.
+- The 47k stopper limits the gate current when the gate conducts, and the 47 nF (instead of 1 uF) lets any bias shift recover in a few
+  milliseconds, so a hard pick cannot cut the stage off. ngspice, same 10x strum: the drain's mean moves from 8.25 V to 9.05 V and back,
+  and the stage never stops conducting.
+- 100k above the pot and 3.3k below it set the range: the stage's input runs from 1/60 of Q1's output just past the switch to 1/2 at
+  10, so Drive 10 is the most gain the design allows, and the low end of the knob starts just above the clean tone's level.
+- 0.68 uF across the 1.5k source (Q1's own value) trims the lows ahead of the clipping, as the 0.68 uF cathode bypasses of the Marshall
+  lead stages do; 470 pF across the 68k drain resistor rolls the stage off above about 5 kHz, taming the fizz after the clipping.
+- Same J201, same 68k drain, same follower: the same voice getting hotter. Every pot is still 100k or less.
+- Drive 0 is untouched (the stage is switched out): every Drive 0 render is byte-identical to v0.3.0 at Sag 0.
+
+**Sag, v0.3.1.** v0.3's Sag was resistance in the supply (the 0-2.7 ohm rheostat, then the active rheostat below). Rails only matter
+when the LM3886 is near clipping, so Sag changed the sound by 0.4 dB even at Master 10 / Volume 8; at Sag 10 and Master 10 it then
+made the LM3886 clip hard on its rails (30% of the time on a hard 196 Hz note). Sag now works the way a valve amp's B+ sag does: the
+power section's own ceiling comes down when the amp works hard.
+- **Circuit.** A 0.1 ohm resistor in the speaker's return senses its current; a precision full-wave rectifier (OPA2197, gain 10) makes
+  1 V per amp, smoothed by 2k / 1 uF (2 ms). The Sag pot (100k linear) takes Sag/10 of it into a gain of 4.8 on a 5 V rail (an OPA197:
+  it limits at 5 V), then 100k / 0.68 uF (68 ms) and a buffer. A 30k V-to-I and a matched PNP mirror (BCM62B) source that control
+  voltage / 30k, up to 0.17 mA, into the long-tailed pair's tail node. The pair then carries up to a third less current, and its swing,
+  tail current x drain resistor, is the power section's ceiling: hard playing pulls it down by up to 3.5 dB and it swells back over
+  about 70 ms as the playing eases. Soft playing draws little current, so Sag leaves it alone.
+- **Sag 0** turns the transconductor off (the pot's wiper at 0 V): no current, and the plug-in at Sag 0 is byte-identical to v0.3.0.
+- The supply is the plain unregulated one again (0.3 ohm of winding per half, 4700 uF per rail). The active rheostat is **not built**:
+  with the pair setting the ceiling, the LM3886 no longer reaches even sagged rails (Sag 10, Master 10, Volume 10, Drive 10, 196 Hz at
+  -6 dBFS: 12.9 V peak at the speaker with the rheostat's rails at 19 V; the speaker's peak, THD and high-harmonic share are the same with
+  and without it), so it is redundant. Its section below, `spice/supply.py` and `spice/sag.py` are kept as the record.
+- The LM3886 is kept off its rails by the gain staging: on the 196 Hz sine at -15 and -6 dBFS, at every Drive sample setting (Drive 0-10,
+  Clip 0 and 5) and at Volume 10 / Master 10 with Drive 0 and 10, the speaker peaks at 11.9-20.3 V against a limit of 23.8-25.4 V and
+  never touches it (v0.3.0 touched it at Drive 10).
+
+**Measured, puzzle-remains lead DI** (42 s, Volume 5, Treble 4, Middle 7, Bass 5, Presence 6, Master 6.5, Clip 0; 10 ms frames;
+loud = DI frames within 20 dB of the DI's 95th percentile; dropout = a loud frame more than 6 dB under the next-lower Drive step;
+crest = median frame peak / rms over loud frames; noise = loud median minus the median of frames where the DI is 45 dB down):
+
+| Drive | loud dB, AMP v0.3.0 -> v0.3.1 | dropouts | crest dB | loud - noise dB | loud dB, REC v0.3.0 -> v0.3.1 | loud - noise dB, REC |
+|---|---|---|---|---|---|---|
+| 0 | -17.2 -> -17.2 | 0 / 0 | 7.2 / 7.2 | 47.3 / 47.3 | -8.2 -> -8.2 | 47.5 / 47.5 |
+| 2 | -10.3 -> -12.9 | 0 / 0 | 3.7 / 6.0 | 44.1 / 47.7 | -1.3 -> -4.4 | 44.8 / 47.6 |
+| 4 | -8.6 -> -10.6 | 0 / 0 | 2.5 / 4.1 | 40.7 / 45.9 | 0.3 -> -2.0 | 41.2 / 46.2 |
+| 6 | -7.6 -> -8.1 | 0 / 0 | 2.6 / 2.2 | 31.3 / 39.4 | 1.5 -> 0.6 | 32.3 / 40.0 |
+| 8 | -7.2 -> -7.5 | 0 / 0 | 2.8 / 2.2 | 25.1 / 32.9 | 1.9 -> 1.3 | 25.7 / 34.0 |
+| 10 | -10.8 -> -7.4 | **8.9%, 210 events, 170 ms** / 0 | **7.7** / 2.4 | **17.5** / 29.9 | -2.1 -> 1.6 | 18.4 / 30.6 |
+
+Hanwell at gain 10 on the same DI: 27.1 dB (cab off), 29.9 dB (cab on). The full table, every step and Clip 5, is in the v0.3.1 release
+notes.
+
+Against ngspice (`verify/compare.py`, 220 Hz, panel at the studio-clean settings), every node within 0.03 dB in level:
+
+| AMP V, Clip, Drive | Drive stage (Q1 at Drive 0) | Q3 drain | speaker |
+|---|---|---|---|
+| 0.1, 0, 0 (Drive out) | -58.4 dB | -49.7 dB | -49.3 dB |
+| 0.1, 0, 3 | -60.8 dB | -51.4 dB | -50.9 dB |
+| 0.3, 5, 3 | -52.7 dB | -50.8 dB | -51.5 dB |
+| 0.1, 5, 8 | -46.4 dB | -45.0 dB | -45.3 dB |
+| 0.3, 0, 8 (gate conducting) | -45.4 dB | -40.8 dB | -43.7 dB |
+| 0.3, 0, 10 (gate conducting) | -44.8 dB | -41.5 dB | -44.3 dB |
+| 0.1, 0, 10, first 0.1 s at 10x (the blocking test), from 0.1 s | -45.5 dB | -42.6 dB | -42.3 dB |
+| 0.3, 0, 0, Sag 10, from 0.1 s | -58.5 dB | -49.9 dB | -51.6 dB |
+| 0.1, 0, 8, Sag 10, from 0.1 s | -46.6 dB | -44.4 dB | -42.8 dB |
+
+In the blocking test the Drive stage's mean is 9.05 V (SPICE) / 9.06 V (plug-in) at 0.10-0.12 s and 8.25 / 8.25 V at 0.4-0.5 s.
+
 ## v0.3: one amp, one character (2026-11-27)
 
 The lead channel is gone. There is one signal path, the v0.2 rhythm channel below, and one more knob, **ANTRIEB (Drive)**, which
 switches a second cascaded J201 stage of the same family in between Q1 and the Mark III stack. From the studio clean tone it climbs to
 edge of breakup, then crunch, then a saturated, singing lead, all through the same stack, LEDs, gain stages and power section.
 
-- **Drive stage.** Q1's follower -> 1k -> 1 uF -> Drive pot (100k log; its bottom returns to ground through 1k) -> J201 gate
+- **Drive stage** (v0.3.0; v0.3.1 above replaced its values). Q1's follower -> 1k -> 1 uF -> Drive pot (100k log; its bottom returns to ground through 1k) -> J201 gate
   (Rd 68k, Rs 1.5k || 22 uF, 18 V) -> rail-to-rail follower -> the stack's 6.8k feed, in place of Q1's follower. The 1k under the pot
   keeps the stage's input from ever reaching zero, so from about Drive 0.5 up the level stays near the clean tone's and the knob mostly
   adds gain and saturation (integrated loudness on a guitar part, Drive 0 -> 10: -8.0, -6.7 at 0.5, -4.2 at 1, -2.0 at 2, -1.0 at 3,
@@ -50,6 +124,8 @@ Against ngspice (`spice/rhythm.py ... drive=D` and `verify/compare.py`), 220 Hz,
 | 0.3, 0, 8 (gate conducting) | -38.3 dB | -36.6 dB | -38.8 dB |
 
 ### Sag is an active rheostat, set by a 100k pot (2026-11-27)
+
+(Superseded in v0.3.1, above: Sag now acts on the long-tailed pair and the active rheostat is not built. Kept as the record.)
 
 Sag was a 0-2.7 ohm power rheostat in each rail. It carries the supply current, so no digital pot could ever take its place. Each rail now
 has an active rheostat instead: a MOSFET that an op-amp holds at 2.7 ohm x Sag/10 for any current, set by a 100k pot that carries less
@@ -136,6 +212,7 @@ original scaled by 1/10 in resistance and 10 in capacitance, driven by a DC-coup
 | rhythm into Master | 1M | 100k |
 | Drive (v0.3) | | 100k |
 | Sag (v0.3) | 0-2.7 ohm power rheostat per rail, carrying the supply current | 100k linear, dual gang, setting an active rheostat per rail (above); it carries under a microamp and floats on the controller's isolated +/-12 V |
+| Sag (v0.3.1) | | 100k linear, a divider on the rectified speaker-current signal (v0.3.1 section); the active rheostat is not built |
 | v0.2 lead Drive (removed) | 1M | 100k |
 | v0.2 lead stack + Master (removed) | 220k / 1M / 22k, 1M | 22k / 100k / 2.2k, 100k |
 

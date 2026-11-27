@@ -1,9 +1,12 @@
 """Render docs/samples from docs/samples/permutations.txt: the puzzle-remains lead DI (not in the repo; pass its path or keep it at
-~/kintsugi/samples/src/puzzle_lead_cut.wav) through uh20_cli, light compression, -18 LUFS, then Opus (128 kbps VBR, mono) encoded
-straight from the float WAV. Needs numpy, soundfile, pyloudnorm and ffmpeg with libopus."""
+~/rindu/samples/src/puzzle_lead_cut.wav) through uh20_cli, light compression, -18 LUFS, then Opus (128 kbps VBR, mono) encoded
+straight from the float WAV. Needs numpy, soundfile, pyloudnorm and ffmpeg with libopus.
+Usage: render_samples.py [DI.wav] [--only 06,07,...]  (--only: just the samples whose numbers are listed)"""
 import numpy as np, soundfile as sf, pyloudnorm as pl, subprocess, os, sys, tempfile
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); T = tempfile.mkdtemp()
-DI = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/kintsugi/samples/src/puzzle_lead_cut.wav")
+args = sys.argv[1:]; ONLY = None
+if "--only" in args: i = args.index("--only"); ONLY = set(args[i + 1].split(",")); del args[i:i + 2]
+DI = args[0] if args else os.path.expanduser("~/rindu/samples/src/puzzle_lead_cut.wav")
 CLI = os.path.join(R, "build", "uh20_cli")
 x, sr = sf.read(DI); x = x if x.ndim == 1 else x.mean(1)
 np.concatenate([x, np.zeros(int(0.5 * sr))]).astype(np.float32).tofile(f"{T}/in.f32")
@@ -16,6 +19,7 @@ def comp(y, sr, thr_db, ratio=2.5, att=0.008, rel=0.18):   # light feed-forward 
     return y * 10 ** (g / 20)
 for line in open(f"{R}/docs/samples/permutations.txt"):
     name, args = line.rstrip("\n").split("|")
+    if ONLY and name.split()[0] not in ONLY: continue
     subprocess.run([CLI, f"{T}/in.f32", f"{T}/out.f32", str(sr)] + args.split(), check=True)
     y = np.fromfile(f"{T}/out.f32", dtype=np.float32).astype(np.float64)
     y = y / (np.abs(y).max() + 1e-12) * 0.5

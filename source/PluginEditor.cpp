@@ -45,7 +45,7 @@ Panel::Panel(AudioProcessorValueTreeState& state) : apvts(state) {
         {"bass", "TIEFEN", "bass", "TIEFEN (bass): low end. With high LAUT or ANTRIEB keep it at 5 or below; above that the low end gets loose."},
         {"presence", "PRÄSENZ", "presence", "PRAESENZ (presence): upper-mid bite from the power stage's feedback loop. 0 = smooth and dark, 10 = cutting."},
         {"jubilee", "CLIP", "LED clip", "CLIP: LEDs clip the peaks: flatter tops, more sustain, thicker (asymmetric). The diode-clipping idea of Marshall's JCM800 2205/2210 (1982) and Silver Jubilee 2555 (1987, LEDs). 0 = off."},
-        {"sag", "DURCHHANG", "sag", "DURCHHANG (sag): resistance in the power supply. Higher = the rails droop under hard chords, so loud notes squash and then bloom back as the capacitors recharge."},
+        {"sag", "DURCHHANG", "sag", "DURCHHANG (sag): the power section gives way under hard playing. Higher = hard notes and chords squash (up to 3.5 dB) and swell back as you ease off; soft playing is left alone."},
         {"master", "SUMME", "master", "SUMME (master): level into the power stage. 6.5 = the studio clean tone; higher = more power-amp crunch and compression."},
     };
     int i = 0;

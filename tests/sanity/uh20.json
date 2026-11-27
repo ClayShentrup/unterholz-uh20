@@ -1,0 +1,54 @@
+{
+ "name": "Unterholz UH-20",
+ "cli": "build/uh20_cli",
+ "io": "f32",
+ "fixed": {},
+ "cab_on": {
+  "output": 0
+ },
+ "cab_off": {
+  "output": 1
+ },
+ "knobs": [
+  "volume",
+  "treble",
+  "middle",
+  "bass",
+  "presence",
+  "master",
+  "sag",
+  "clip",
+  "drive"
+ ],
+ "base": {
+  "volume": 5,
+  "treble": 4,
+  "middle": 7,
+  "bass": 5,
+  "presence": 6,
+  "master": 6.5,
+  "drive": 0,
+  "clip": 0
+ },
+ "gain_knobs": [
+  "volume",
+  "drive",
+  "clip",
+  "master"
+ ],
+ "hot_context": [
+  "drive",
+  "volume"
+ ],
+ "presets": [],
+ "level_free": [
+  "clip"
+ ],
+ "soft_thd_max_db": -6.0,
+ "alive_context": {
+  "sag": {
+   "master": 10,
+   "volume": 8
+  }
+ }
+}

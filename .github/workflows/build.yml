@@ -32,6 +32,12 @@ jobs:
         run: |
           cmake --build build --config Release --target uh20_tests
           ctest --test-dir build -C Release --output-on-failure
+      - name: Sanity suite (blocking, touch, aliasing, stability, knobs, sample rates)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --build build --config Release --target uh20_cli
+          python3 -m pip install --quiet --break-system-packages numpy scipy soundfile
+          python3 tools/amp_sanity.py tests/sanity/uh20.json --quick --cli build/uh20_cli --json sanity.json
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |

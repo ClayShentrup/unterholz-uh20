@@ -88,7 +88,8 @@ static Params all10(double drive) { return P({{"drive", drive}, {"volume", 10}, 
 static Params all0(double drive) { return P({{"drive", drive}, {"volume", 0}, {"treble", 0}, {"middle", 0}, {"bass", 0}, {"presence", 0}, {"clip", 0}, {"sag", 0}, {"master", 0}}); }
 
 // ---------------------------------------------------------------- golden input/output pairs
-// frozen = recorded by v0.2.0 (before Drive existed) and never rewritten: at Drive 0 the engine must still match them exactly
+// frozen = recorded by v0.2.0 (before Drive existed) or, the *_sag0 pair, by v0.3.0, and never rewritten: at Drive 0 and Sag 0 the
+// engine must still match them exactly. rhythm_clip and rhythm_pushed (Sag 5 and 8) were frozen until v0.3.1 redesigned Sag.
 struct Golden { const char* name; Params p; double seconds; bool frozen; };
 static std::string goldenDir() {
     std::string f = __FILE__; const size_t s = f.find_last_of("/\\"); return (s == std::string::npos ? std::string(".") : f.substr(0, s)) + "/golden/";
@@ -98,8 +99,10 @@ int main(int argc, char** argv) {
     const bool update = argc > 1 && !std::strcmp(argv[1], "--update");
     const std::vector<Golden> golden = {
         {"rhythm_clean", Params{}, 0.3, true},
-        {"rhythm_clip", P({{"clip", 6}, {"sag", 5}}), 0.3, true},
-        {"rhythm_pushed", P({{"volume", 9}, {"master", 9}, {"sag", 8}}), 0.3, true},
+        {"rhythm_clip", P({{"clip", 6}, {"sag", 5}}), 0.3, false},
+        {"rhythm_pushed", P({{"volume", 9}, {"master", 9}, {"sag", 8}}), 0.3, false},
+        {"rhythm_clip_sag0", P({{"clip", 6}}), 0.3, true},
+        {"rhythm_pushed_sag0", P({{"volume", 9}, {"master", 9}}), 0.3, true},
         {"rhythm_bright_shift_amp", P({{"bright", 1}, {"shift", 1}, {"output", 1}}), 0.3, true},
         {"drive_edge", P({{"drive", 2}}), 0.3, false},
         {"drive_lead", P({{"drive", 8}, {"clip", 5}, {"sag", 5}}), 0.3, false},
@@ -167,24 +170,32 @@ int main(int argc, char** argv) {
         char nm[80]; std::snprintf(nm, sizeof nm, "loop settles: presence %.0f, master %.0f", pres, mas);
         check(v < 1e-3, nm, "%.2g V (limit %.0g)", v, 1e-3);
     }
-    {   // Sag is real supply resistance: driven hard, the rails droop much further at Sag 10 than at 0
-        double rail[2];
-        for (int k = 0; k < 2; ++k) { Engine e; e.setParams(P({{"volume", 8}, {"master", 10}, {"sag", k ? 10.0 : 0.0}, {"output", 1}})); e.prepare(FS);
-            double lo = 1e9; for (int i = 0; i < (int)FS; ++i) { e.tick(0.5 * std::sin(2 * kPi * 110 * i / FS)); if (i > FS / 2) lo = std::min(lo, e.vposR); } rail[k] = lo; }
-        check(rail[0] - rail[1] > 2.0, "Sag 10 droops the rails more than Sag 0 under load", "%.2f V more (limit %.0f)", rail[0] - rail[1], 2.0);
+    {   // Sag compresses: a hard note at Master 10 settles lower at Sag 10 than at Sag 0, a soft one barely changes, and after the hard
+        // playing stops the amp swells back
+        auto run = [&](double sag, double amp) {
+            Engine e; e.setParams(P({{"volume", 8}, {"master", 10}, {"sag", sag}, {"output", 1}})); e.prepare(FS);
+            std::vector<double> y; for (int i = 0; i < (int)(2.5 * FS); ++i) y.push_back(e.tick((i < 1.5 * FS ? amp : 0.003) * std::sin(2 * kPi * 110 * i / FS)));
+            return y;
+        };
+        const auto h0 = run(0, 0.3), h10 = run(10, 0.3), s0 = run(0, 0.003), s10 = run(10, 0.003);
+        const size_t a = (size_t)(1.0 * FS), b = (size_t)(1.5 * FS), c = (size_t)(2.2 * FS), d = (size_t)(2.5 * FS);
+        const double hard = 20 * std::log10(rms(h10, a, b) / rms(h0, a, b)), soft = 20 * std::log10(rms(s10, a, b) / rms(s0, a, b));
+        const double back = 20 * std::log10(rms(h10, c, d) / rms(h0, c, d));
+        check(hard < -2.0, "Sag 10 squashes a hard note at Master 10", "%.2f dB vs Sag 0 (limit %.0f)", hard, -2.0);
+        check(std::abs(soft) < 0.3, "Sag 10 leaves soft playing alone", "%.2f dB vs Sag 0 (limit %.1f)", std::abs(soft), 0.3);
+        check(std::abs(back) < 0.5, "Sag 10 swells back 0.7 s after the hard playing stops", "%.2f dB vs Sag 0 (limit %.1f)", std::abs(back), 0.5);
     }
-
     std::printf("behaviour\n");
-    for (int ch = 0; ch < 2; ++ch) for (int which = 0; which < 5; ++which) {
+    for (int ch = 0; ch < 2; ++ch) for (int which = 0; which < 6; ++which) {
         if (which == 4 && ch == 0) continue;
         Engine e; Params p = P({{"drive", ch ? 6.0 : 0.0}, {"clip", 4}}); e.setParams(p); e.prepare(FS);
         double prev = 0, normal = 0, atMove = 0;
         for (int i = 0; i < 96000; ++i) {
-            if (i == 48123) { if (which == 0) p.treble += 0.2; else if (which == 1) p.clip += 0.3; else if (which == 2) p.master += 0.1; else if (which == 3) p.presence += 0.2; else p.drive += 0.2; e.setParams(p); }
+            if (i == 48123) { if (which == 0) p.treble += 0.2; else if (which == 1) p.clip += 0.3; else if (which == 2) p.master += 0.1; else if (which == 3) p.presence += 0.2; else if (which == 4) p.drive += 0.2; else p.sag += 2; e.setParams(p); }
             const double y = e.tick(0.3 * std::sin(2 * kPi * 110 * i / FS)), st = std::abs(y - prev); prev = y;
             if (i > 24000 && i < 48000) normal = std::max(normal, st); if (i >= 48123 && i < 48200) atMove = std::max(atMove, st);
         }
-        const char* kn[5] = {"treble", "clip", "master", "presence", "drive"};
+        const char* kn[6] = {"treble", "clip", "master", "presence", "drive", "sag"};
         check(atMove / normal < 2.5, (std::string(ch ? "drive 6: a " : "drive 0: a ") + kn[which] + " nudge mid-note does not click").c_str(), "%.2fx a normal step (limit %.1f)", atMove / normal, 2.5);
     }
     {   // the Drive switch, moved while a note sounds (0 -> 3 and 3 -> 0): no click, no thump
@@ -198,6 +209,17 @@ int main(int argc, char** argv) {
             }
             check(atMove / normal < 1.5, dir ? "switching Drive off mid-note does not click" : "switching Drive on mid-note does not click",
                   "%.2fx the larger steady step before or after (limit %.1f)", atMove / normal, 1.5);
+        }
+    }
+    {   // no blocking: a 0 dBFS strum then a quiet sustained note; in v0.3.0 the Drive stage's gate charged its coupling capacitor and
+        // cut the stage off for tens of milliseconds. Every 10 ms frame after the strum must stay within 6 dB of the settled level.
+        std::vector<float> x = plucks(0.25, 1.0); x.resize((size_t)(2.0 * FS), 0.f);
+        for (size_t i = (size_t)(0.25 * FS); i < x.size(); ++i) x[i] = (float)(0.03 * std::sin(2 * kPi * 196 * i / FS));
+        for (double d : {6.0, 8.0, 10.0}) for (int out = 0; out < 2; ++out) {
+            const Out o = render(P({{"drive", d}, {"output", out}}), x); const double settled = rms(o.L, (size_t)(1.5 * FS), o.L.size());
+            double worst = 0; for (size_t i = (size_t)(0.26 * FS); i + 480 <= o.L.size(); i += 480) worst = std::min(worst, 20 * std::log10(rms(o.L, i, i + 480) / settled));
+            char nm[96]; std::snprintf(nm, sizeof nm, "drive %.0f, %s: no dropout after a 0 dBFS strum", d, out ? "AMP" : "REC");
+            check(worst > -6, nm, "deepest frame %.1f dB under the settled level (limit %.0f)", worst, -6);
         }
     }
     {   // Drive gives a smooth rise in saturation: harmonic share of a 110 Hz note grows steadily with the knob

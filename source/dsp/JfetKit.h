@@ -384,6 +384,7 @@ struct JStage {
 // Unknowns: tail voltage, the two drain currents. Output: drain 2 (non-inverting from gate 1, inverting from gate 2).
 struct LongTailPair {
     double Vp = 15, Vn = -15, Rd = 22e3, Rt = 30e3, vt = 0, i1 = 0, i2 = 0, d2 = 0, d20 = 0;
+    double iinj = 0;   // current injected into the tail node from outside (the UH-20's Sag transconductor): the pair carries less
     void settle() {
         double x[3] = {-0.2, 2.5e-4, 2.5e-4}; const double sc[3] = {1.0, 1e-4, 1e-4};
         auto F = [&](const double* y, double* r) { const double d1 = Vp - Rd * y[1], dd = Vp - Rd * y[2];
@@ -395,13 +396,13 @@ struct LongTailPair {
         {   // fast path
             double x[3] = {vt, i1, i2}; const double sc[3] = {1.0, 1e-4, 1e-4};
             auto F = [&](const double* y, double* r) { const double d1 = Vp - Rd * y[1], dd = (Vp / Rd + J - y[2]) / gd;
-                r[0] = (J201::id(g1 - y[0], d1 - y[0]) - y[1]) * 1e4; r[1] = (J201::id(g2 - y[0], dd - y[0]) - y[2]) * 1e4; r[2] = (y[1] + y[2] - (y[0] - Vn) / Rt) * 1e4; };
+                r[0] = (J201::id(g1 - y[0], d1 - y[0]) - y[1]) * 1e4; r[1] = (J201::id(g2 - y[0], dd - y[0]) - y[2]) * 1e4; r[2] = (y[1] + y[2] - (y[0] - Vn) / Rt + iinj) * 1e4; };
             if (newton<3>(F, x, sc, 12, 1e-11, false) < 1e-11 && x[1] >= 0 && x[2] >= 0) { vt = x[0]; i1 = x[1]; i2 = x[2]; d2 = (Vp / Rd + J - i2) / gd; return d2; }
         }
         // each side's current for a given tail voltage (monotone in the current), then the tail (monotone in vt)
         auto I1 = [&](double t) { i1 = solve1([&](double i) { return J201::id(g1 - t, Vp - Rd * i - t) - i; }, 0.0, imax, i1, 1e-14, 1e-11); return i1; };
         auto I2 = [&](double t) { i2 = solve1([&](double i) { const double dd = (Vp / Rd + J - i) / gd; return J201::id(g2 - t, dd - t) - i; }, 0.0, imax, i2, 1e-14, 1e-11); return i2; };
-        vt = solve1([&](double t) { return I1(t) + I2(t) - (t - Vn) / Rt; }, Vn, Vp, vt, 1e-10, 1e-6);
+        vt = solve1([&](double t) { return I1(t) + I2(t) - (t - Vn) / Rt + iinj; }, Vn, Vp, vt, 1e-10, 1e-6);
         I1(vt); I2(vt); d2 = (Vp / Rd + J - i2) / gd;
         return d2;
     }

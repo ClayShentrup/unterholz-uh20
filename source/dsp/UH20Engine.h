@@ -2,8 +2,9 @@
 //   PREAMP: J201 input stage (Clip: LEDs at the stack input and a gang that opens up the stage's source); DRIVE: a cascaded J201
 //           stage switched in ahead of the stack (0 = out); Mark III tone stack, Volume (bright cap), two J201 gain stages.
 //   POWER:  Master into a J201 long-tailed pair, then an LM3886 (class AB) with global feedback to the pair's second gate,
-//           Presence in that feedback network, the speaker load, and rails from an unregulated supply whose series resistance is
-//           the Sag control. REC: an active cab simulator on the speaker output (1/20 divider); AMP: the same divider without it.
+//           Presence in that feedback network, the speaker load, rails from an unregulated supply, and Sag: a transconductor that
+//           takes tail current from the pair as the speaker current rises, so the power section's ceiling comes down under hard
+//           playing. REC: an active cab simulator on the speaker output (1/20 divider); AMP: the same divider without it.
 // Every J201 is the vendor model (hardware/spice/j201.lib) solved per sample with its real loading (source/dsp/JfetKit.h).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
@@ -80,9 +81,9 @@ public:
         for (auto* b : {&chp, &cp1, &cp2, &clp1, &clp2}) b->reset();
         // DC operating point of every stage, then each network charged to it
         q1.settle(); qd.settle(); q2.settle(); q3.settle(); ltp.settle();
-        rN1.initDC(don ? qd.vd0 : q1.vd0); rN2.initDC(q2.vd0); rN3.initDC(q3.vd0); dN.initDC(q1.vd0);
+        rN1.initDC(don ? qd.vd0 : q1.vd0); rN2.initDC(q2.vd0); rN3.initDC(q3.vd0); dN.initDC(q1.vd0); dL.initDC(qd.vd0);
         cpl.initDC(ltp.d20); fb.initDC(0);
-        vout = 0; vposR = vnegR = railRest(); ph = 0; xf = 0;
+        vout = 0; vposR = vnegR = railRest(); ph = 0; xf = 0; isense = 0; vctl = 0; ltp.iinj = 0;
     }
     void setParams(const Params& np) { if (!(np == p)) update(np, false); }
     void process(float* buf, int n) { for (int i = 0; i < n; ++i) buf[i] = (float)tick(buf[i]); }
@@ -115,7 +116,11 @@ public:
     jk::Network<10> rN1;  // Q1 drain -> 4.7k -> A -> Mark III stack -> Volume (bright) -> 22n -> Q2 gate (1M); A -> 0.47u -> LEDs
     jk::Network<3> rN2;   // Q2 drain -> 22n -> 100k -> Q3 gate (6.8k)
     jk::Network<5> rN3;   // Q3 drain -> 100n -> 47k -> Master (1M log) -> 0.1u -> LTP gate (1M)
-    jk::Network<3> dN;    // Drive: Q1 follower -> 1k -> 1u -> 100k log pot (1k below it) -> Drive stage gate
+    // DRIVE stage parts (v0.3.1): coupling cap, the resistors above and below the 100k pot, gate stopper, drain resistor and the
+    // capacitor across it, source resistor and its (partial) bypass
+    struct DriveParts { double Cc = 47e-9, Rtop = 100e3, Rbot = 3300, Rstop = 47e3, Rd = 68e3, Cd = 470e-12, Rs = 1500, Cs = 0.68e-6; } dp;
+    jk::Network<5> dN;    // Drive: Q1 follower -> 1k -> 47n -> 100k -> 100k log pot (3.3k below it) -> 47k gate stopper -> Drive stage gate
+    jk::Network<1> dL;    // Drive stage drain: 470p across its 68k drain resistor
     jk::Network<2> cpl;   // LTP drain 2 -> 1u -> LM3886 + input (47k)
     jk::Network<2> fb;    // speaker -> 100k -> LTP gate 2 (4.7k; Presence: 0.1u + 5k)
     Biquad chp, cp1, cp2, clp1, clp2;
@@ -129,6 +134,12 @@ public:
     static constexpr double VPK = 31.1 - 0.9, IQ = 0.05, DROP = 3.0;
     double CRES = 4700e-6;
     double railRest() const { return VPK - IQ * rsup * 3; }
+    // SAG: the speaker current (0.1 ohm in the speaker's return, precision full-wave rectifier, 1 V/A), smoothed 2 ms, scaled by the
+    // Sag pot and a gain of 4.8, limited at 5 V (the control amp's 5 V rail), smoothed again (100k / 0.68 uF, 68 ms), drives a 30k
+    // V-to-I whose PNP mirror sources that current into the long-tailed pair's tail: the pair carries less, so the power section's
+    // ceiling (the pair's swing, tail current x drain resistor) comes down under hard playing and recovers as it eases
+    static constexpr double SAG_K = 4.8, SAG_VMAX = 5.0, SAG_TS = 2e-3, SAG_TC = 100e3 * 0.68e-6, SAG_RVI = 30e3;
+    double ksag = 0, isense = 0, vctl = 0;
 
     // rail-to-rail op-amp follower on the 18 V preamp supply (e.g. OPA2197): unity gain, limited at its rails
     static double buf(double v) { return std::clamp(v, 0.02, VPRE - 0.02); }
@@ -142,7 +153,8 @@ public:
             // into the network, so the coupling capacitor charges (bias shift) as in the circuit
             const double voc = dN.injV(b1), gd = jk::gateClamp(voc, dN.Zi, qd.vs), ig = (voc - gd) / dN.Zi;
             dN.process(b1, -ig);
-            const double bs = buf(qd.tick(gd, [](double) { return 0.0; }));
+            const double bs = buf(qd.tick(gd, [&](double v) { return dL.portG() * v - dL.portJ(); }));
+            dL.process(qd.vd);
             if (xf > 0) {   // the switch moving while playing: a short crossfade of the signal and a slower glide of the DC level,
                             // so it neither clicks nor thumps (the circuit's switch would pop; the plug-in does not need to)
                 const double t = 1.0 - (double)--xf / XF, wa = std::min(1.0, 8 * t), wd = t * t * (3 - 2 * t);
@@ -169,6 +181,11 @@ public:
         const double ip = (vout > 0 ? vout / RL : 0) + IQ, in = (vout < 0 ? -vout / RL : 0) + IQ;
         vposR += ((vsec > vposR ? (vsec - vposR) / rsup : 0) - ip) / (CRES * FSI);
         vnegR += ((vsec > vnegR ? (vsec - vnegR) / rsup : 0) - in) / (CRES * FSI);
+        // Sag: the speaker current, full-wave rectified and smoothed, sets the current the transconductor pulls from the regulator's
+        // adjust node (limited); the rail falls by that current times R2, through R2 || Cadj
+        isense += (std::abs(vout) / RL - isense) / (SAG_TS * FSI);
+        vctl += (std::min(ksag * isense, SAG_VMAX) - vctl) / (SAG_TC * FSI);
+        ltp.iinj = vctl / SAG_RVI;
         // outputs: REC = the speaker voltage through the 1/20 divider into the cab simulator; AMP = the same, uncabbed
         const double y = vout * KREC;
         if (p.output == 1) return y;
@@ -210,17 +227,22 @@ public:
         const double ma = clampd(taperA(p.master / 10), 0.0005, 0.9995);
         { auto& n = rN3; n.clear(); n.rs = 4700; n.C(0, 1, 1e-6); n.R(1, 2, 4700); n.R(2, -1, 1e9);   // Q3 follower, 47k / 10
           n.R(2, 3, 100e3 * (1 - ma)); n.R(3, -1, 100e3 * ma); n.C(3, 4, 1e-6); n.R(4, -1, 100e3); n.out = 4; n.build(fs); }
-        // ---- DRIVE: a cascaded J201 of the same family (Rd 68k, Rs 1.5k || 22u), fed through a 100k log pot whose bottom returns
-        // through 1k, so from about Drive 0.5 up it starts near unity; at 0 a switch takes the stage out (Q1 drives the stack, as v0.2)
+        // ---- DRIVE: a cascaded J201 of the same family (Rd 68k || 470p, Rs 1.5k || 0.68u), fed through 47n and a 100k log pot with
+        // 100k above it and 3.3k below it (so the stage's input runs from 1/60 of Q1's output just past the switch to 1/2 at 10: the low
+        // end starts just above the clean tone's level, the top is the most gain the design allows), into the gate through a 47k stopper; at 0 a switch takes the
+        // stage out (Q1 drives the stack, as v0.2). The stopper limits the gate current when the gate conducts and the small coupling
+        // capacitor lets the bias recover in milliseconds, so a hard pick cannot block the stage; the partial bypass trims the lows
+        // ahead of the clipping and the 470p the fizz after it.
         const bool donNew = p.drive >= 0.05;
-        qd.Vdd = VPRE; qd.Rd = 68e3; qd.src.clear(); qd.src.R(0, -1, 1500); qd.src.C(0, -1, 22e-6); qd.build(fs);
+        qd.Vdd = VPRE; qd.Rd = dp.Rd; qd.src.clear(); qd.src.R(0, -1, dp.Rs); qd.src.C(0, -1, dp.Cs); qd.build(fs);
+        { auto& n = dL; n.clear(); n.rs = 1; n.C(0, -1, dp.Cd); n.out = 0; n.build(fs); }   // Vdd is AC ground: the cap sits across Rd
         if (donNew || first) {   // switched out, the stage keeps its last pot setting while it fades away
             const double dv = clampd(taperA(p.drive / 10), 0.0005, 0.9995);
-            auto& n = dN; n.clear(); n.rs = 1000; n.inj = 2; n.C(0, 1, 1e-6); n.R(1, 2, 100e3 * (1 - dv)); n.R(2, -1, 100e3 * dv + 1000);
-            n.out = 2; n.build(fs);
+            auto& n = dN; n.clear(); n.rs = 1000; n.inj = 4; n.C(0, 1, dp.Cc); n.R(1, 2, dp.Rtop); n.R(2, 3, 100e3 * (1 - dv)); n.R(3, -1, 100e3 * dv + dp.Rbot);
+            n.R(3, 4, dp.Rstop); n.out = 4; n.build(fs);
         }
         if (donNew != don && !first) {
-            if (donNew && xf == 0) { qd.settle(); dN.initDC(q1.vd0); }   // switching the stage in: it starts at its operating point
+            if (donNew && xf == 0) { qd.settle(); dN.initDC(q1.vd0); dL.initDC(qd.vd0); }   // switching the stage in: it starts at its operating point
             xf = XF - xf;                                                  // a reversal mid-fade continues from where it is
         }
         don = donNew;
@@ -228,7 +250,8 @@ public:
         // ---- power: long-tailed pair (J201 x2, 22k drains, 30k tail, +/-15 V), coupling into the LM3886, feedback with Presence
         { auto& n = cpl; n.clear(); n.rs = 1; n.C(0, -1, CCOMP); n.C(0, 1, 1e-6); n.R(1, -1, 47e3); n.out = 1; n.build(fs); }   // CCOMP: dominant-pole compensation at the pair's output
         { auto& n = fb; n.clear(); n.rs = 100e3; n.R(0, -1, 4700); n.C(0, 1, 0.1e-6); n.R(1, -1, 5000 * (1 - clampd(p.presence / 10, 0, 1)) + 47); n.out = 0; n.build(fs); }
-        rsup = 0.3 + 2.7 * clampd(p.sag / 10, 0, 1);   // winding + the Sag rheostat in the supply
+        rsup = 0.3;   // the secondary's winding resistance (v0.3's Sag rheostat in the supply is gone: Sag acts on the pair, above)
+        ksag = SAG_K * clampd(p.sag / 10, 0, 1);
         // cab simulator: Sallen-Key high-pass, two MFB band-passes summed in, two Sallen-Key low-passes (active filters on E96 values),
         // fitted through this circuit at Volume 5, Treble 3, Middle 7, Bass 5, Presence 5, Master 6.5 to the measured studio clean
         // tone: 1.39 dB rms, 60 Hz - 12.5 kHz

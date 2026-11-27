@@ -1,6 +1,7 @@
 """Write and run the UH-20 preamp (with the DRIVE stage when drive > 0) + power section as an ngspice netlist (J201 vendor model, LEDs, Mark III stack, J201
 long-tailed pair, LM3886 as a gain block limited at fixed rails, or at the live rails of the real supply with supply=rheo|active
-sag=S, feedback with Presence). Usage: rhythm.py AMP JUBILEE [k=v...]"""
+sag=S (the v0.3 rheostat experiments), feedback with Presence, and (ideal supply, sag=S > 0) the v0.3.1 Sag transconductor on the
+pair's tail. Usage: rhythm.py AMP JUBILEE [k=v...]"""
 import sys, subprocess, os, math
 H = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, H)
@@ -20,14 +21,48 @@ C6 pb pin 1u
 RPIN pin 0 47k
 """
     kind = kn.get("supply", "ideal")
-    if kind == "ideal": t += f"BOUT out 0 V=max(min({1+22/5.6}*V(pin),{rail}),-{rail})\nRLOAD out 0 8\n"
-    else: t += supply.MODELS + supply.supply(kind, kn.get("sag", 0), kn.get("soft", 0) > 0) + supply.lm3886(1 + 22 / 5.6)
+    if kind == "ideal":
+        t += f"BOUT out 0 V=max(min({1+22/5.6}*V(pin),{rail}),-{rail})\nRLOAD out 0 8\n"
+        g = min(max(kn.get("sag", 0) / 10, 0), 1)
+        if g > 0: t += f"""* SAG (v0.3.1): speaker current (0.1 ohm sense in the speaker's return, precision full-wave rectifier, 1 V/A) -> 2k / 1u (2 ms)
+*   -> Sag pot (100k lin, fraction {g:g}) -> x4.8 on a 5 V rail (limits at 5 V) -> 100k / 0.68u (68 ms) -> buffer
+*   -> 30k V-to-I -> PNP mirror sourcing that current into the pair's tail
+BSNS sn 0 V=abs(V(out))/8
+RSF sn sf 2k
+CSF sf 0 1u
+BSG sg 0 V=min(4.8*{g:g}*V(sf),5)
+RSC sg vc 100k
+CSC vc 0 0.68u
+BINJ 0 tail I=V(vc)/30k
+"""
+    else:   # the v0.3 Sag rheostat experiments on the real supply (kept for the record; here sag sets that rheostat, no transconductor)
+        t += supply.MODELS + supply.supply(kind, kn.get("sag", 0), kn.get("soft", 0) > 0) + supply.lm3886(1 + 22 / 5.6)
     return t + f"""* feedback: 100k to the pair's second gate, 4.7k down; Presence: 0.1u + 5k pot
 RNF out lg2 100k
 RFB lg2 0 4.7k
 CPR lg2 pn 0.1u
 RPR pn 0 {5000*(1-pres)+47:.6g}
 """
+# DRIVE stage parts (v0.3.1): kn may override them (dcc, drtop, drbot, drstop, drs, dcs, dcd) to try alternatives
+DRIVE = dict(dcc=47e-9, drtop=100e3, drbot=3.3e3, drstop=47e3, drs=1.5e3, dcs=0.68e-6, dcd=470e-12)
+def drive_stage(dv, kn):
+    d = {k: kn.get(k, v) for k, v in DRIVE.items()}
+    return f"""* DRIVE: Q1 follower -> 1k -> {d['dcc']:.3g} -> {d['drtop']:.3g} -> 100k log pot ({d['drbot']:.3g} below) -> {d['drstop']:.3g} gate stopper
+*   -> cascaded J201 (68k || {d['dcd']:.3g}, {d['drs']:.3g} || {d['dcs']:.3g}) -> its follower
+RDS b1 dn0 1k
+CDR dn0 dtop {d['dcc']:.6g}
+RTOP dtop dp {d['drtop']:.6g}
+RP1 dp dw {100e3*(1-dv):.6g}
+RP2 dw dbot {100e3*dv:.6g}
+RBOT dbot 0 {d['drbot']:.6g}
+RSTOP dw dg {d['drstop']:.6g}
+JD dq dg sd J201
+RDQ dd dq 68k
+CDQ dd dq {d['dcd']:.6g}
+RSQ sd 0 {d['drs']:.6g}
+CSQ sd 0 {d['dcs']:.6g}
+BBUFD bd 0 V=max(min(V(dq),17.98),0.02)
+RTH1 bd d1b 6.8k"""
 def netlist(amp, kn, out):
     t = min(max(kn["treble"] / 10, 0.0004), 0.9996); b = max(taperA(kn["bass"] / 10), 0.0004); m = max(kn["middle"] / 10, 0.004)
     vv = min(max(taperA(kn["volume"] / 10), 0.0005), 0.9995); ma = min(max(taperA(kn["master"] / 10), 0.0005), 0.9995)
@@ -41,7 +76,7 @@ def netlist(amp, kn, out):
 VDD dd 0 DC 18
 VP vp 0 DC 15
 VN vn 0 DC -15
-VIN in 0 SIN(0 {amp} 220)
+{"VIN in 0 SIN(0 " + str(amp) + " 220)" if kn.get("burst", 1) == 1 else f"BIN in 0 V={amp}*sin(2*pi*220*time)*(1+{kn['burst'] - 1}*(time<0.1))"}
 * Q1: 1k stopper, 1M leak; source 3.3k (|| Jubilee gang A: rg + 10u) then 1.5k || 0.68u
 RIN in g1 1k
 RLK g1 0 1Meg
@@ -53,10 +88,7 @@ RS1B m1 0 1.5k
 CS1 m1 0 0.68u
 * drain -> rail-to-rail follower -> 6.8k (68k/10) -> 470 -> A -> Mark III stack (every R /10, every C x10); A -> 4.7u -> Clip gang B -> LEDs
 BBUF1 b1 0 V=max(min(V(d1),17.98),0.02)
-{("* DRIVE: Q1 follower -> 1k -> 1u -> 100k log pot (1k below) -> cascaded J201 (68k, 1.5k || 22u) -> its follower" + chr(10) +
-  "RDS b1 dn0 1k" + chr(10) + "CDR dn0 dtop 1u" + chr(10) + f"RP1 dtop dw {100e3*(1-dv):.6g}" + chr(10) + f"RP2 dw dbot {100e3*dv:.6g}" + chr(10) +
-  "RBOT dbot 0 1k" + chr(10) + "JD dq dw sd J201" + chr(10) + "RDQ dd dq 68k" + chr(10) + "RSQ sd 0 1.5k" + chr(10) + "CSQ sd 0 22u" + chr(10) +
-  "BBUFD bd 0 V=max(min(V(dq),17.98),0.02)" + chr(10) + "RTH1 bd d1b 6.8k") if don else "RTH1 b1 d1b 6.8k"}
+{drive_stage(dv, kn) if don else "RTH1 b1 d1b 6.8k"}
 R47 d1b a 470
 {("CLD a la 4.7u" + chr(10) + "RBL la 0 100k" + chr(10) + "RJ la l " + f"{rj:.6g}" + chr(10) + "DL1 l 0 LED" + chr(10) + "DL2 0 l2 LED" + chr(10) + "DL3 l2 l LED") if jon else ""}
 CT a tt 2.5n
@@ -92,7 +124,7 @@ RM1 mw mv {100e3*(1-ma):.6g}
 RM2 mv 0 {100e3*ma:.6g}
 C5 mv lg1 1u
 RL1 lg1 0 100k
-{power(pres, rail, kn)}.tran 2.6u 0.5 0.3 2.6u
+{power(pres, rail, kn)}.tran 2.6u 0.5 {kn.get("tstart", 0.3)} 2.6u
 .control
 run
 wrdata {out} v({'dq' if don else 'd1'}) v(d3) v(pb) v(out)
@@ -102,5 +134,5 @@ wrdata {out} v({'dq' if don else 'd1'}) v(d3) v(pb) v(out)
 if __name__ == "__main__":
     amp = float(sys.argv[1]); kn = dict(volume=5, treble=3, middle=7, bass=5, presence=5, jubilee=float(sys.argv[2]), master=6.5, drive=0)
     for a in sys.argv[3:]: k, v = a.split("="); kn[k] = v if k == "supply" else float(v)
-    out = os.path.abspath(f"rhythm_{amp}_{kn['jubilee']}_d{kn['drive']}.txt"); cir = out[:-4] + ".cir"; open(cir, "w").write(netlist(amp, kn, out))
+    out = os.path.abspath(f"rhythm_{amp}_{kn['jubilee']}_d{kn['drive']}_b{kn.get('burst', 1)}_s{kn.get('sag', 0)}.txt"); cir = out[:-4] + ".cir"; open(cir, "w").write(netlist(amp, kn, out))
     subprocess.run(["ngspice", "-b", cir], capture_output=True); print(out)

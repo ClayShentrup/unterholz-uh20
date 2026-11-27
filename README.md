@@ -6,7 +6,7 @@
 
 The UH-20 is one amp with one character. At its reference settings it is a studio-preamp-style clean tone: glassy, with a sweet second harmonic that grows smoothly as you dig in. One knob, **ANTRIEB** (drive), switches in another J201 gain stage ahead of the tone stack and takes the same amp from edge of breakup through crunch to a saturated, singing lead.
 
-The preamp feeds a class AB power section: a J201 long-tailed pair driving an LM3886, with global feedback (Presence lives in that feedback network) and an unregulated supply whose series resistance is the Sag control. The output is either an analog cab simulation (REC) or the bare amp (AMP).
+The preamp feeds a class AB power section: a J201 long-tailed pair driving an LM3886, with global feedback (Presence lives in that feedback network) and Sag, a transconductor that takes tail current from the pair as the speaker current rises, so hard playing pulls the power section's ceiling down. The output is either an analog cab simulation (REC) or the bare amp (AMP).
 
 The goal is a real, buildable amp made of ordinary parts: JFETs, an LM3886, op-amps for the cab simulator, LEDs, resistors, capacitors and pots. The plugin is a simulation of exactly that circuit, so you can hear and play the design before building it.
 
@@ -65,13 +65,13 @@ Point at any control in the plugin and the strip at the bottom explains it.
 | Knob | What it does to the sound | What it is in the circuit |
 |---|---|---|
 | **LAUT** (volume) | Preamp gain: clean up to about 5, edge of breakup at 6-7, crunch above. | 100k log pot after the tone stack, feeding the second J201 gain stage through 220 nF. |
-| **ANTRIEB** (drive) | 0 = the clean amp; about 2 = edge of breakup; 5 = crunch; 8-10 = a saturated, singing lead. | A cascaded J201 stage (68k drain, 1.5k ‖ 22 µF source) ahead of the tone stack, fed through a 100k log pot; at 0 a switch takes it out of the circuit. |
+| **ANTRIEB** (drive) | 0 = the clean amp; about 2 = edge of breakup; 5 = crunch; 8-10 = a saturated, singing lead. | A cascaded J201 stage (68k ‖ 470 pF drain, 1.5k ‖ 0.68 µF source) ahead of the tone stack, fed through 47 nF, a 100k log pot between 100k and 3.3k, and a 47k gate stopper; at 0 a switch takes it out of the circuit. |
 | **HÖHEN** (treble) | Top end; since the stack sits before the last gain stages, more treble also drives them harder. | 25k treble pot and 2.5 nF of the Mark III-style tone stack. |
 | **MITTEN** (middle) | Midrange body: low = scooped, high = fuller and pushier. | 2.5k mid pot at the foot of the stack. |
 | **TIEFEN** (bass) | Low end; with high LAUT or ANTRIEB keep it at 5 or below, or the lows get loose. | 25k log bass pot with the stack's 1 µF and 0.47 µF. |
 | **PRÄSENZ** (presence) | Upper-mid bite: 0 = smooth and dark, 10 = cutting. | 5k pot and 0.1 µF in the power amp's global feedback leg. |
 | **CLIP** (LED clip) | LEDs flatten the peaks: more squash and sustain, thicker because the clipping is asymmetric; 0 = off. It is the diode-clipping idea Marshall introduced in the JCM800 2205/2210 split-channel heads (1982) and carried into the Silver Jubilee 2555 (1987), which used LEDs. | Dual-gang reverse-log pot: 47k in series with the LEDs (a red LED one way, two the other, behind a coupling capacitor at the stack input) and 100k bypassing part of the first stage's source resistor, so the stage drives them harder; 0 switches the branch out. |
-| **DURCHHANG** (sag) | The rails droop under hard chords: loud notes squash, then bloom back as the capacitors recharge. | 0-2.7 Ω in series with each rail ahead of the 4700 µF reservoir capacitors: an active rheostat (a MOSFET an op-amp holds at 2.7 Ω × setting) set by a 100k pot. |
+| **DURCHHANG** (sag) | Hard playing pulls the power section's ceiling down by up to 3.5 dB and it swells back over about 70 ms as you ease off; soft playing is left alone; 0 = off. | A transconductor driven by the speaker current (0.1 Ω sense, rectified, 100k linear pot, 68 ms smoothing) takes up to a third of the long-tailed pair's tail current. |
 | **SUMME** (master) | Level into the power section: 6.5 is the reference clean tone; higher adds power-amp crunch and compression. | 100k log pot between the last gain stage's follower and the J201 long-tailed pair that drives the LM3886. |
 
 | Switch / setting | What it does to the sound | What it is in the circuit |
@@ -91,7 +91,7 @@ The plugin simulates the circuit part by part, in volts ([`source/dsp/JfetKit.h`
 - every J201 is the vendor SPICE model, solved each sample together with its real source network, its drain load and gate conduction;
 - tone stacks, volume and master pots, coupling and feedback networks are linear networks solved exactly;
 - the LED clipper is solved exactly (Lambert W);
-- the power section is a J201 long-tailed pair into an LM3886 (class AB) limited by its rails, with global feedback compensated by 220 pF on the pair's output (measured gain margin at least 10 dB at every setting), and rails from a 60 Hz rectifier, reservoir capacitors and the Sag resistance;
+- the power section is a J201 long-tailed pair into an LM3886 (class AB) limited by its rails, with global feedback compensated by 220 pF on the pair's output (measured gain margin at least 10 dB at every setting), rails from a 60 Hz rectifier and reservoir capacitors, and the Sag transconductor on the pair's tail;
 - it runs at 8x oversampling with 8th-order anti-aliasing filters.
 
 It is checked against ngspice on the same netlists ([`hardware/verify/`](hardware/verify/), [`hardware/spice/rhythm.py`](hardware/spice/rhythm.py)):
@@ -99,9 +99,10 @@ It is checked against ngspice on the same netlists ([`hardware/verify/`](hardwar
 | | |
 |---|---|
 | preamp + power section, Drive 0, 220 Hz at 20 mV-0.3 V, Clip 0 and 6 | every node within 0.04 dB of ngspice, waveforms -47 to -62 dB residual |
-| with the Drive stage, Drive 3 and 8, Clip 0 and 5, 220 Hz at 0.1-0.3 V | every node within 0.04 dB, waveforms -37 to -58 dB residual (-37 dB with the Drive stage's gate conducting hard) |
+| with the Drive stage (v0.3.1), Drive 3, 8 and 10, Clip 0 and 5, 220 Hz at 0.1-0.3 V, and a 10x strum into Drive 10 (the blocking test) | every node within 0.03 dB, waveforms -41 to -61 dB residual |
+| Sag (v0.3.1), Sag 5 and 10, Drive 0 and 8 | every node within 0.03 dB, waveforms -43 to -59 dB residual |
 | small-signal response, 50 Hz - 16 kHz | within 0.35 dB |
-| Sag's active rheostat against a 0-2.7 Ω power rheostat, on the real supply, driven into hard clipping and plucked, Sag 0/3/7/10 ([`sag.py`](hardware/spice/sag.py)) | rails within 4 mV (43 mV at Sag 0, the bypass relay's contacts), speaker -82 to -117 dB residual |
+| v0.3's active rheostat against a 0-2.7 Ω power rheostat (not built since v0.3.1, kept as the record), Sag 0/3/7/10 ([`sag.py`](hardware/spice/sag.py)) | rails within 4 mV (43 mV at Sag 0, the bypass relay's contacts), speaker -82 to -117 dB residual |
 
 The REC cab simulator (active filters) is fitted through this circuit to a measured studio preamp's clean tone: 1.39 dB rms from 60 Hz to 12.5 kHz at Volume 5, Treble 3, Middle 7, Bass 5, Presence 5, Master 6.5.
 
@@ -118,7 +119,9 @@ cmake --build build --config Release --target UnterholzUH20_All UnterholzUH20_CL
 
 You need CMake 3.22+ and a C++20 compiler. JUCE and the CLAP extensions come in as git submodules. Every push is built on GitHub Actions, and every `v*` tag publishes a release.
 
-**Tests.** `ctest --test-dir build -C Release` runs [`tests/uh20_tests.cpp`](tests/uh20_tests.cpp) on every CI build: golden input/output pairs (short plucked-string signals whose output must match [`tests/golden`](tests/golden) to -100 dB, so any change to the sound fails; the four recorded by v0.2.0 are frozen, which proves Drive 0 is still exactly the v0.2 amp), a check that every solver converges (a 1 ppm input change must move the output by no more than -95 dB), hard high notes that must stay free of subharmonics and inside an aliasing budget, the Clip LED solve against its exact equation, the power amp's feedback loop settling at every Presence and Master setting, Sag drooping the rails under load, knob moves and the Drive switch that must not click, Drive adding harmonics steadily from 0 to 10, and extreme settings that must stay finite and fall silent. When the sound is meant to change, `uh20_tests --update` rewrites the Drive goldens in the same commit (never the frozen ones). `tools/render_samples.py` rebuilds the listening samples (Opus, 128 kbps VBR, from the float renders).
+**Tests.** `ctest --test-dir build -C Release` runs [`tests/uh20_tests.cpp`](tests/uh20_tests.cpp) on every CI build: golden input/output pairs (short plucked-string signals whose output must match [`tests/golden`](tests/golden) to -100 dB, so any change to the sound fails; the ones recorded by v0.2.0 and v0.3.0 at Sag 0 are frozen, which proves Drive 0 is still exactly the v0.2 amp), a check that every solver converges (a 1 ppm input change must move the output by no more than -95 dB), hard high notes that must stay free of subharmonics and inside an aliasing budget, the Clip LED solve against its exact equation, the power amp's feedback loop settling at every Presence and Master setting, Sag squashing a hard note and leaving soft playing alone, no dropout after a 0 dBFS strum at Drive 6-10 (the v0.3.0 blocking), knob moves and the Drive switch that must not click, Drive adding harmonics steadily from 0 to 10, and extreme settings that must stay finite and fall silent. When the sound is meant to change, `uh20_tests --update` rewrites the Drive goldens in the same commit (never the frozen ones). `tools/render_samples.py` rebuilds the listening samples (Opus, 128 kbps VBR, from the float renders).
+
+**Sanity suite.** [`tools/amp_sanity.py`](tools/amp_sanity.py) runs the offline renderer through checks for the faults that make an amp sound broken rather than different: blocking (dropouts as a gain knob rises), level collapse, compression running backwards, hiss brought up into the playing, an amp that no longer cleans up when you pick softly, aliasing on the top notes, self-oscillation, DC and ringing tails at extreme settings, level jumps between knob steps, dead knobs, and 44.1 / 48 / 96 kHz disagreeing. Every signal is synthetic, so CI runs it on each build: `python3 tools/amp_sanity.py tests/sanity/uh20.json --cli build/uh20_cli` (add `--quick` for the short version). Limits are at the top of the file; WARN lines are reported but don't fail the build.
 
 ## License
 
