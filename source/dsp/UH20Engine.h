@@ -61,6 +61,16 @@ inline double jshape(double v, double lu, double ld, double p, double c) {
 inline double taperA(double x) { return x <= 0.5 ? 0.2 * x : 0.1 + 1.8 * (x - 0.5); }
 inline double clampd(double x, double lo, double hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
+// Lambert's W (principal branch) from ln z: w + ln w = ln z, Newton steps from the asymptotic guess (exact to rounding)
+inline double lambertW(double lnz) {
+    double w;
+    if (lnz < -2) { const double z = std::exp(lnz); w = z * (1 - z); }
+    else if (lnz < 1.5) w = 0.567 * std::exp(0.6 * lnz);
+    else w = lnz - std::log(lnz);
+    for (int it = 0; it < 5; ++it) w = std::max(w * (1 + lnz - std::log(w)) / (1 + w), 1e-300);
+    return w;
+}
+
 struct Params {
     double volume = 5, treble = 3, middle = 7, bass = 5, presence = 5, jubilee = 0, sag = 0, master = 6.5;
     bool bright = false, shift = false;
@@ -82,7 +92,7 @@ public:
     void reset() {
         for (Biquad* b : {&q1, &volf, &cc2, &q2, &cc4, &q3, &cc3, &pres, &lhp, &mlb, &mmd, &mtr, &chp, &cp1, &cp2, &clp1, &clp2}) b->reset();
         aaup.reset(); aadn.reset();
-        jct = jcb = jcm = ict = icb = icm = 0; ledvd = 0; envs = 0;
+        jct = jcb = jcm = ict = icb = icm = 0; envs = 0;
     }
     void setParams(const Params& np) { if (!(np == p)) update(np, false); }
 
@@ -147,7 +157,7 @@ private:
     Butter8 aaup, aadn;
     bool jon = false;
     double rj = 0, pdrive = 1, sagd = 0, ldrv = 1, lpdrv = 1, a1 = 0, a2 = 0, csc = 4.12 / 14.12, att = 0, rel = 0, gout = 1;
-    double envs = 0, ledvd = 0;
+    double envs = 0;
     // tone stack (6-node nodal model, trapezoidal capacitors)
     double MI[36] = {}, jct = 0, jcb = 0, jcm = 0, ict = 0, icb = 0, icm = 0;
 
@@ -181,19 +191,13 @@ private:
         jct = GCT * vct + ict; jcb = GCB * vcb + icb; jcm = GCM * vcm + icm;
         return V[2];
     }
-    // LED pair behind the Jubilee pot: solve vo = x + rt*Is*(exp(x/(n*VT))-1) for the LED voltage x (safeguarded Newton)
-    inline double led(double vo, double rt) {
-        const double dir = vo >= 0 ? 1 : -1, n = dir > 0 ? NLED : 2 * NLED, av = std::abs(vo);
-        double lo = 0, hi = av, x = ledvd * dir;
-        if (x < lo || x > hi) x = 0.5 * av;
-        for (int it = 0; it < 10; ++it) {
-            const double ex = std::exp(x / (n * VT)), f = av - x - rt * ISLED * (ex - 1), df = -1 - rt * ISLED * ex / (n * VT);
-            if (f > 0) lo = x; else hi = x;
-            const double xn = x - f / df;
-            x = (xn > lo && xn < hi) ? xn : 0.5 * (lo + hi);
-        }
-        ledvd = dir * x;
-        return dir * ISLED * (std::exp(x / (n * VT)) - 1);
+    // LED pair behind the Jubilee pot (one red LED one way, two in series the other): the string voltage x solves
+    // vo = x + rt*Is*(exp(x/nvt)-1). Exactly, x = vo + k - nvt*W(z) with k = rt*Is and ln z = ln(k/nvt) + (vo + k)/nvt
+    // (W: Lambert's function), found from w + ln w = ln z by Newton steps from the asymptotic guess. No memory between samples.
+    inline double led(double vo, double rt) const {
+        const double dir = vo >= 0 ? 1 : -1, nvt = (dir > 0 ? NLED : 2 * NLED) * VT, av = std::abs(vo), k = rt * ISLED;
+        const double x = std::min(av + k - nvt * lambertW(std::log(k / nvt) + (av + k) / nvt), av);
+        return dir * (x / nvt < 30 ? ISLED * std::expm1(x / nvt) : (av - x) / rt);
     }
 
     void update(const Params& np, bool force) {

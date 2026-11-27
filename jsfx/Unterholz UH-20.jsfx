@@ -105,19 +105,19 @@ function stack(vs) local(i,j,s,vct,vcb,vcm) (
   V[2];
 );
 
-// ---- LED clipper (1 red LED one way, 2 in series the other) behind the Jubilee pot, Newton per sample
-ledvd=0;
-// solve a = x + rt*Is*(exp(x/(n*VT))-1) for the LED voltage x in [0,a]: safeguarded Newton (cannot diverge)
-function led(vo,rt) local(dir,n,av,lo,hi,x,ex,f,df,xn) (
-  dir = vo>=0 ? 1 : -1; n = dir>0 ? NLED : 2*NLED; av = abs(vo);
-  lo = 0; hi = av; x = ledvd*dir; (x<lo || x>hi) ? x = 0.5*av;
-  loop(10,
-    ex = exp(x/(n*VT)); f = av - x - rt*ISLED*(ex-1); df = -1 - rt*ISLED*ex/(n*VT);
-    f > 0 ? lo = x : hi = x;
-    xn = x - f/df; x = (xn>lo && xn<hi) ? xn : 0.5*(lo+hi);
-  );
-  ledvd = dir*x;
-  dir*ISLED*(exp(x/(n*VT))-1);
+// ---- LED clipper (1 red LED one way, 2 in series the other) behind the Jubilee pot. The string voltage x solves
+// vo = x + rt*Is*(exp(x/nvt)-1); exactly, x = vo + k - nvt*W(z), k = rt*Is, ln z = ln(k/nvt) + (vo+k)/nvt (W: Lambert's
+// function), found from w + ln w = ln z by Newton steps from the asymptotic guess. No memory between samples, always converged.
+WMIN = exp(-690);
+function lamw(lnz) local(w,z) (
+  lnz < -2 ? ( z = exp(lnz); w = z*(1-z); ) : ( lnz < 1.5 ? ( w = 0.567*exp(0.6*lnz); ) : ( w = lnz - log(lnz); ); );
+  loop(5, w = max(w*(1 + lnz - log(w))/(1 + w), WMIN); );
+  w;
+);
+function led(vo,rt) local(dir,nvt,av,k,x) (
+  dir = vo>=0 ? 1 : -1; nvt = (dir>0 ? NLED : 2*NLED)*VT; av = abs(vo); k = rt*ISLED;
+  x = min(av + k - nvt*lamw(log(k/nvt) + (av + k)/nvt), av);
+  dir*(x/nvt < 30 ? ISLED*(exp(x/nvt)-1) : (av - x)/rt);
 );
 
 envs=0; bplus=17; needupd=0; drag=-1; lastcap=0;
@@ -143,7 +143,7 @@ pp=0; loop(CP,
   pp+=1;);
 memset(XB,0,2*CN*CP); memset(INB,0,CB); memset(OUTB,0,CB); memset(OVB,0,CB);
 cpos=0; cring=0;
-pdc_delay = CB; pdc_bot_ch = 0; pdc_top_ch = 2;
+pdc_bot_ch = 0; pdc_top_ch = 2;   // latency is reported only while the IR convolution is in the path (see upd)
 function cabconv(x) local(yv,pp,k,src) (
   INB[cpos] = x; yv = OUTB[cpos]; cpos += 1;
   cpos >= CB ? (
@@ -219,6 +219,7 @@ clp1.lp2(4943.99,1.0067,FSI); clp2.lp2(4943.99,1.0067,FSI);
 csc = 4.12/14.12;
 att = 1-exp(-1/(0.015*FSI)); rel = 1-exp(-1/(0.12*FSI));
 gout = 10^(trim/20) / ((outsel == 2 || (outsel == 0 && irn > 0)) ? 2.0 : 0.5);
+pdc_delay = (outsel == 0 && irn > 0) ? CB : 0;                      // the convolution's block latency, only when it runs
 CABG = 0.044;
 );
 

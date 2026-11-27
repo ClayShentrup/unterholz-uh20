@@ -43,3 +43,8 @@ target_compile_definitions(uh20_screenshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_C
 target_link_libraries(uh20_screenshot PRIVATE juce::juce_audio_utils juce::juce_gui_basics PUBLIC juce::juce_recommended_config_flags)
 
 add_executable(uh20_cli tools/uh20_cli.cpp)
+
+# tests: tests/uh20_tests.cpp (run with ctest, or uh20_tests --update to rewrite the goldens on purpose)
+enable_testing()
+add_executable(uh20_tests tests/uh20_tests.cpp)
+add_test(NAME uh20_tests COMMAND uh20_tests)

@@ -41,16 +41,16 @@ One guitar part, the lead from Broken Ladder's *the puzzle remains* (a Gretsch D
 
 | | Settings |
 |---|---|
-| 01 | [Rhythm - volume 5, treble 3, middle 7, bass 5, presence 6, master 6.5 (the puzzle remains)](docs/samples/01%20Rhythm%20-%20volume%205%2C%20treble%203%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5%20%28the%20puzzle%20remains%29.mp3) |
-| 02 | [Rhythm - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright](docs/samples/02%20Rhythm%20-%20volume%203%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%205%2C%20master%206.5%2C%20bright.mp3) |
-| 03 | [Rhythm - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5](docs/samples/03%20Rhythm%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207.5.mp3) |
-| 04 | [Rhythm - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7](docs/samples/04%20Rhythm%20-%20volume%208%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%208%2C%20sag%207.mp3) |
-| 05 | [Rhythm - volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5](docs/samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20jubilee%205.mp3) |
-| 06 | [Lead - drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5](docs/samples/06%20Lead%20-%20drive%203%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3) |
-| 07 | [Lead - drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5](docs/samples/07%20Lead%20-%20drive%205%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.mp3) |
-| 08 | [Lead - drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4](docs/samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20jubilee%204.mp3) |
-| 09 | [Lead - drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5](docs/samples/09%20Lead%20-%20drive%209%2C%20treble%206%2C%20middle%206%2C%20bass%205%2C%20presence%207%2C%20master%207%2C%20sag%205.mp3) |
-| 10 | [Lead - drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift](docs/samples/10%20Lead%20-%20drive%206%2C%20treble%206%2C%20middle%205%2C%20bass%206%2C%20presence%205%2C%20master%206.5%2C%20bass%20shift.mp3) |
+| 01 | [Rhythm - volume 5, treble 3, middle 7, bass 5, presence 6, master 6.5 (the puzzle remains)](docs/samples/01%20Rhythm%20-%20volume%205%2C%20treble%203%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5%20%28the%20puzzle%20remains%29.opus) |
+| 02 | [Rhythm - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright](docs/samples/02%20Rhythm%20-%20volume%203%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%205%2C%20master%206.5%2C%20bright.opus) |
+| 03 | [Rhythm - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5](docs/samples/03%20Rhythm%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207.5.opus) |
+| 04 | [Rhythm - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7](docs/samples/04%20Rhythm%20-%20volume%208%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%208%2C%20sag%207.opus) |
+| 05 | [Rhythm - volume 6, treble 4, middle 7, bass 5, presence 6, master 7, jubilee 5](docs/samples/05%20Rhythm%20-%20volume%206%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%207%2C%20jubilee%205.opus) |
+| 06 | [Lead - drive 3, treble 5, middle 6, bass 5, presence 5, master 6.5](docs/samples/06%20Lead%20-%20drive%203%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.opus) |
+| 07 | [Lead - drive 5, treble 5, middle 6, bass 5, presence 5, master 6.5](docs/samples/07%20Lead%20-%20drive%205%2C%20treble%205%2C%20middle%206%2C%20bass%205%2C%20presence%205%2C%20master%206.5.opus) |
+| 08 | [Lead - drive 7, treble 5, middle 7, bass 4, presence 6, master 6.5, jubilee 4](docs/samples/08%20Lead%20-%20drive%207%2C%20treble%205%2C%20middle%207%2C%20bass%204%2C%20presence%206%2C%20master%206.5%2C%20jubilee%204.opus) |
+| 09 | [Lead - drive 9, treble 6, middle 6, bass 5, presence 7, master 7, sag 5](docs/samples/09%20Lead%20-%20drive%209%2C%20treble%206%2C%20middle%206%2C%20bass%205%2C%20presence%207%2C%20master%207%2C%20sag%205.opus) |
+| 10 | [Lead - drive 6, treble 6, middle 5, bass 6, presence 5, master 6.5, bass shift](docs/samples/10%20Lead%20-%20drive%206%2C%20treble%206%2C%20middle%205%2C%20bass%206%2C%20presence%205%2C%20master%206.5%2C%20bass%20shift.opus) |
 
 ## The controls
 
@@ -100,6 +100,8 @@ cmake --build build --config Release --target UnterholzUH20_All UnterholzUH20_CL
 ```
 
 You need CMake 3.22+ and a C++20 compiler. JUCE and the CLAP extensions come in as git submodules. Every push is built on GitHub Actions, and every `v*` tag publishes a release.
+
+**Tests.** `ctest --test-dir build -C Release` runs [`tests/uh20_tests.cpp`](tests/uh20_tests.cpp) on every CI build: golden input/output pairs for both channels (short plucked-string signals whose output must match [`tests/golden`](tests/golden) to -100 dB, so any change to the sound fails), a check that every solver converges (a 1 ppm input change must move the output by no more than -95 dB), hard high notes that must stay free of subharmonics and inside an aliasing budget, the Jubilee LED solve against its exact equation, knob moves that must not click, and extreme settings that must stay finite and fall silent. When the sound is meant to change, `uh20_tests --update` rewrites the goldens in the same commit. `tools/render_samples.py` rebuilds the listening samples (Opus, 128 kbps VBR, from the float renders).
 
 ## License
 

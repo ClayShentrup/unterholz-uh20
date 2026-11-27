@@ -3,3 +3,4 @@ build/
 *.f32
 .DS_Store
 tools/uh20_cli
+!tests/golden/*.f32
