@@ -17,3 +17,20 @@ The deliverable is a schematic of ordinary parts. The plugin (`source/dsp/UH20En
 - `spice/match_stage.py` searches E12 resistor values for a J201 stage at 18 V with the same normalised curve.
 - First results: cold clipper 0.3%, gain stage 0.7%, input stage 1.0% of swing.
 - Interstage dividers are the tube divider × the next stage's input scale × the previous stage's output scale.
+
+## Status 2026-11-27: converting the behavioural blocks
+
+- **Fixed in v0.1.2:** the Jubilee LED solve is exact (Lambert W). Before, it was wrong on 17-35% of samples by up to 5 V.
+- **Circuit kit:** `source/dsp/JfetKit.h` simulates J201 stages from the vendor model, with the drain loading, source networks,
+  gate conduction, follower interaction and junction capacitance of the real circuit. Checked against ngspice in
+  `hardware/verify/` (see its README): the LEAD preamp of `spice/jfet800.cir` matches within 0.23 dB small-signal and to -25..-59 dB
+  on transient waveforms.
+- **Still behavioural in the shipped engine, to be replaced with JfetKit blocks:**
+  1. RHYTHMUS Q1-Q3: a linear small-signal filter plus the fitted `jshape` curve per stage. Replace with `CSStage`s at the component
+     values above (Q1 Rd 68k, Rs 3.3k + 1.5k || 0.68 uF with the Jubilee gang; Q2/Q3 Rd 47k, Rs 2.2k || 22 uF), driving the existing
+     networks through their ports.
+  2. LEAD: the fitted gain stages. Replace with the verified `jfet800.cir` chain, with Drive as the 1M log pot and the stack pots live.
+  3. Output stage and Sag: tanh plus an envelope-driven droop. To be replaced by a real power section: a J201 long-tailed pair into a
+     class AB LM3886, with Presence in its feedback network. Sag becomes real supply impedance: the LM3886 rails from an unregulated
+     supply whose series resistance the Sag control sets, so the rails droop with the load current.
+- The REC cab sim is already a circuit (active filters on E96 values).
