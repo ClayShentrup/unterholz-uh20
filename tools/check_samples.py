@@ -6,7 +6,8 @@ Usage:  check_samples.py <pages URL or local docs/ dir> [...more]
 For every <audio src> on the page (or every .opus under <dir>/samples): it must be served 200 as audio/ogg, decode as Opus
 at 48 kHz in two channels with neither channel silent or polarity-flipped, sit within 1 LU of the -18 LUFS target, keep its
 true peak at or below -1 dBTP, have no stretch quieter than 15 LU under its own loudness (outside the final tail), and run
-within 15% of the median length of its page. Prints PASS/FAIL per file; exit status = number of failures.
+within 15% of the median length of its page. A sample listed in samples/levels.json (number -> intended offset in LU, for a series
+level-matched to its first member, such as a Sag sweep) is held to -18 plus that offset instead. Prints PASS/FAIL per file; exit status = number of failures.
 """
 import sys, os, re, subprocess, tempfile, urllib.parse, urllib.request, glob
 import numpy as np, pyloudnorm as pl
@@ -31,6 +32,16 @@ def sources(target):
         return [(urllib.parse.unquote(s.split("/")[-1]), urllib.parse.urljoin(base, s)) for s in srcs]
     return [(os.path.basename(p), p) for p in sorted(glob.glob(os.path.join(target, "samples", "*.opus")))]
 
+def levels_for(target):
+    import json
+    try:
+        if target.startswith("http"):
+            base = target if target.endswith("/") else target + "/"
+            return json.loads(urllib.request.urlopen(base + "samples/levels.json").read())
+        return json.load(open(os.path.join(target, "samples", "levels.json")))
+    except Exception:
+        return {}
+
 def fetch(src, tmp):
     if not src.startswith("http"): return src, None
     req = urllib.request.Request(src, headers={"Cache-Control": "no-cache"})
@@ -39,7 +50,7 @@ def fetch(src, tmp):
     return p, ct
 
 def check(target):
-    print(target); tmp = tempfile.mkdtemp(); rows = []
+    print(target); tmp = tempfile.mkdtemp(); rows = []; lv = levels_for(target)
     for name, src in sources(target):
         p, ct = fetch(src, tmp); (codec, sr, ch), y = decode(p)
         L = pl.Meter(48000).integrated_loudness(y); tp = true_peak(y)
@@ -56,7 +67,8 @@ def check(target):
         if r["ch"] != "2": bad.append(f"{r['ch']} channel(s)")
         if 20 * np.log10(r["rms"].min() + 1e-12) < 20 * np.log10(r["rms"].max() + 1e-12) - 20: bad.append("one channel silent")
         if r["corr"] < 0: bad.append(f"channels out of polarity ({r['corr']:.2f})")
-        if abs(r["L"] - TARGET) > TOL: bad.append(f"{r['L']:.1f} LUFS (target {TARGET} ± {TOL})")
+        want = TARGET + lv.get(r["name"].split()[0], 0.0)
+        if abs(r["L"] - want) > TOL: bad.append(f"{r['L']:.1f} LUFS (target {want:.1f} ± {TOL})")
         if r["tp"] > TP_MAX: bad.append(f"true peak {r['tp']:.1f} dBTP")
         if r["hole"] > HOLE_LU: bad.append(f"a stretch {r['hole']:.0f} LU under the file's loudness")
         if abs(r["dur"] - med) > LEN_TOL * med: bad.append(f"{r['dur']:.1f} s vs median {med:.1f} s")

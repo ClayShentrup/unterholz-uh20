@@ -1,9 +1,16 @@
 """Render docs/samples from docs/samples/permutations.txt: the puzzle-remains lead DI (not in the repo; pass its path or keep it at
-~/rindu/samples/src/puzzle_lead_cut.wav) through uh20_cli, light compression, -18 LUFS, then Opus (128 kbps VBR, two identical channels like the other amps' samples; some players handle mono Ogg Opus
-unreliably) encoded
-straight from the float WAV. Needs numpy, soundfile, pyloudnorm and ffmpeg with libopus.
-Usage: render_samples.py [DI.wav] [--only 06,07,...]  (--only: just the samples whose numbers are listed)"""
-import numpy as np, soundfile as sf, pyloudnorm as pl, subprocess, os, sys, tempfile
+~/rindu/samples/src/puzzle_lead_cut.wav) through uh20_cli, then -18 LUFS with a transparent peak limiter (-1.5 dBFS ceiling, no
+other compression, so the amp's own dynamics are what you hear), two identical channels like the other amps' samples, and Opus
+(128 kbps VBR) encoded straight from the float WAV. Needs numpy, scipy, soundfile, pyloudnorm and ffmpeg with libopus.
+
+permutations.txt lines are  name|key=value ...  with an optional third field  |group=NAME. Samples in a group share one gain, the
+one that puts the group's first sample at -18 LUFS, so a knob that changes level (Sag) is heard doing it. Each grouped sample's
+intended offset from -18 is written to docs/samples/levels.json, which tools/check_samples.py reads.
+
+Usage: render_samples.py [DI.wav] [--only 06,07,...]  (--only: just the samples whose numbers are listed; a grouped sample also
+renders the rest of its group so they share the gain)"""
+import numpy as np, soundfile as sf, pyloudnorm as pl, subprocess, os, sys, tempfile, json
+from scipy.ndimage import minimum_filter1d
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); T = tempfile.mkdtemp()
 args = sys.argv[1:]; ONLY = None
 if "--only" in args: i = args.index("--only"); ONLY = set(args[i + 1].split(",")); del args[i:i + 2]
@@ -11,24 +18,41 @@ DI = args[0] if args else os.path.expanduser("~/rindu/samples/src/puzzle_lead_cu
 CLI = os.path.join(R, "build", "uh20_cli")
 x, sr = sf.read(DI); x = x if x.ndim == 1 else x.mean(1)
 np.concatenate([x, np.zeros(int(0.5 * sr))]).astype(np.float32).tofile(f"{T}/in.f32")
-def comp(y, sr, thr_db, ratio=2.5, att=0.008, rel=0.18):   # light feed-forward compression, RMS detector, soft knee
-    a, r = np.exp(-1 / (att * sr)), np.exp(-1 / (rel * sr)); env = 0; g = np.empty_like(y); p2 = y * y
-    for i in range(len(y)):
-        c = a if p2[i] > env else r; env = c * env + (1 - c) * p2[i]
-        over = 10 * np.log10(env + 1e-12) - thr_db
-        g[i] = -(0 if over < -3 else ((over + 3) ** 2 / 12 * (1 - 1 / ratio) if over < 3 else over * (1 - 1 / ratio)))
-    return y * 10 ** (g / 20)
-for line in open(f"{R}/docs/samples/permutations.txt"):
-    name, args = line.rstrip("\n").split("|")
-    if ONLY and name.split()[0] not in ONLY: continue
+meter = pl.Meter(sr)
+
+def limit(y, ceil_db=-1.5, look=0.003, rel=0.05):   # lookahead peak limiter: gain = min over the window of ceiling/|x|, smoothed
+    ceil = 10 ** (ceil_db / 20); a = np.abs(y).max(1); need = np.minimum(1, ceil / np.maximum(a, 1e-12))
+    g = minimum_filter1d(need, size=2 * int(look * sr) + 1); k = np.exp(-1 / (rel * sr)); s = 1.0; out = np.empty_like(g)
+    for i in range(len(g)):
+        s = g[i] if g[i] < s else k * s + (1 - k) * g[i]; out[i] = s
+    return y * out[:, None]
+
+def render(args):
     subprocess.run([CLI, f"{T}/in.f32", f"{T}/out.f32", str(sr)] + args.split(), check=True)
     y = np.fromfile(f"{T}/out.f32", dtype=np.float32).astype(np.float64)
-    y = y / (np.abs(y).max() + 1e-12) * 0.5
-    y = comp(y, sr, 10 * np.log10(np.mean(y ** 2)) + 6)
-    y = np.stack([y, y], 1)                                   # two identical channels, measured as stereo like the other amps
-    y *= 10 ** ((-18 - pl.Meter(sr).integrated_loudness(y)) / 20)
-    if np.abs(y).max() > 0.89: y *= 0.89 / np.abs(y).max()
+    return np.stack([y, y], 1)                      # two identical channels, measured as stereo like the other amps
+
+lines = [l.rstrip("\n").split("|") for l in open(f"{R}/docs/samples/permutations.txt") if l.strip()]
+groups = {}
+for f in lines:
+    if len(f) > 2 and f[2].startswith("group="): groups.setdefault(f[2][6:], []).append(f[0])
+want = {f[0] for f in lines if not ONLY or f[0].split()[0] in ONLY}
+for g, members in groups.items():
+    if want & set(members): want |= set(members)
+lp = f"{R}/docs/samples/levels.json"; levels = json.load(open(lp)) if os.path.exists(lp) else {}
+gain = {}
+for f in lines:
+    name, args = f[0], f[1]; grp = f[2][6:] if len(f) > 2 and f[2].startswith("group=") else None
+    if name not in want: continue
+    y = render(args); L = meter.integrated_loudness(y)
+    if grp is None: g = -18 - L
+    else: g = gain.setdefault(grp, -18 - L)
+    y = limit(y * 10 ** (g / 20)); Lf = meter.integrated_loudness(y)
+    key = name.split()[0]
+    if grp is None: levels.pop(key, None)
+    else: levels[key] = round(Lf + 18, 1)
     sf.write(f"{T}/u.wav", y.astype(np.float32), sr, subtype="FLOAT")
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", f"{T}/u.wav", "-c:a", "libopus", "-b:a", "128k", "-vbr", "on",
                     "-compression_level", "10", "-application", "audio", f"{R}/docs/samples/{name}.opus"], check=True)
-    print(name)
+    print(f"{name}: {Lf:.1f} LUFS" + (f" (group {grp})" if grp else ""))
+json.dump(dict(sorted(levels.items())), open(lp, "w"), indent=1)

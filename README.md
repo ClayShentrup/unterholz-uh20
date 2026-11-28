@@ -35,7 +35,7 @@ The macOS builds are not notarized yet; `INSTALL.txt` in the download explains t
 
 ## Samples
 
-**[Listen to them in your browser](https://clayshentrup.github.io/unterholz-uh20/#samples)**, one player per sample, or open any file below.
+**[Listen to them in your browser](https://clayshentrup.github.io/unterholz-uh20/#samples)**, one player per sample, or open any file below. Each file is level-matched to -18 LUFS with only a peak limiter (no compression), except the two SAG series (17-20, 21-23): each shares the gain of its Sag 0 file, so Sag's squeeze is audible. The intended offsets are in [`docs/samples/levels.json`](docs/samples/levels.json).
 
 One guitar part, the lead from Broken Ladder's *the puzzle remains* (a Gretsch Duo Jet, recorded straight in), through the UH-20 at 16 settings, with the REC (analog cab) output. The only other processing is light compression after the amp (at most 3 dB) and level matching. Each file is named by its knobs. The first is the setting used on the record; 05-10 sweep ANTRIEB from 0 to 10 with Clip off, and 11-16 repeat the sweep at Clip 5.
 
@@ -57,6 +57,16 @@ One guitar part, the lead from Broken Ladder's *the puzzle remains* (a Gretsch D
 | 14 | [Drive 6, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5](docs/samples/14%20Drive%206%2C%20clip%205%20-%20volume%205%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5.opus) |
 | 15 | [Drive 8, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5](docs/samples/15%20Drive%208%2C%20clip%205%20-%20volume%205%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5.opus) |
 | 16 | [Drive 10, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5](docs/samples/16%20Drive%2010%2C%20clip%205%20-%20volume%205%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%206.5.opus) |
+| 17 | [Sag 0, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9](docs/samples/17%20Sag%200%2C%20crunch%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%209.opus) |
+| 18 | [Sag 3, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9](docs/samples/18%20Sag%203%2C%20crunch%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%209.opus) |
+| 19 | [Sag 6, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9](docs/samples/19%20Sag%206%2C%20crunch%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%209.opus) |
+| 20 | [Sag 10, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9](docs/samples/20%20Sag%2010%2C%20crunch%20-%20volume%207%2C%20treble%204%2C%20middle%207%2C%20bass%205%2C%20presence%206%2C%20master%209.opus) |
+| 21 | [Sag 0, lead - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8](docs/samples/21%20Sag%200%2C%20lead%20-%20drive%206%2C%20clip%203%2C%20volume%205%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%206%2C%20master%208.opus) |
+| 22 | [Sag 5, lead - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8](docs/samples/22%20Sag%205%2C%20lead%20-%20drive%206%2C%20clip%203%2C%20volume%205%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%206%2C%20master%208.opus) |
+| 23 | [Sag 10, lead - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8](docs/samples/23%20Sag%2010%2C%20lead%20-%20drive%206%2C%20clip%203%2C%20volume%205%2C%20treble%205%2C%20middle%206%2C%20bass%204%2C%20presence%206%2C%20master%208.opus) |
+| 24 | [Dark clean - volume 4, treble 2, middle 5, bass 6, presence 3, master 6.5, shift](docs/samples/24%20Dark%20clean%20-%20volume%204%2C%20treble%202%2C%20middle%205%2C%20bass%206%2C%20presence%203%2C%20master%206.5%2C%20shift.opus) |
+| 25 | [Bright clean - volume 4, treble 7, middle 3, bass 5, presence 7, master 6.5, bright](docs/samples/25%20Bright%20clean%20-%20volume%204%2C%20treble%207%2C%20middle%203%2C%20bass%205%2C%20presence%207%2C%20master%206.5%2C%20bright.opus) |
+| 26 | [Mid lead - drive 8, volume 5, treble 3, middle 9, bass 3, presence 5, master 7, sag 4](docs/samples/26%20Mid%20lead%20-%20drive%208%2C%20volume%205%2C%20treble%203%2C%20middle%209%2C%20bass%203%2C%20presence%205%2C%20master%207%2C%20sag%204.opus) |
 
 ## The knobs
 
