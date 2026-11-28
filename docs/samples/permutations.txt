@@ -2,25 +2,25 @@
 02 Clean - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright|volume=3 treble=5 middle=6 bass=4 presence=5 master=6.5 bright=1
 03 Crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5|volume=7 treble=4 middle=7 bass=5 presence=6 master=7.5
 04 Heavy crunch - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7|volume=8 treble=4 middle=7 bass=5 presence=6 master=8 sag=7
-05 Drive 0, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=0 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-06 Drive 2, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=2 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-07 Drive 4, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=4 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-08 Drive 6, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=6 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-09 Drive 8, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=8 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-10 Drive 10, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=10 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-11 Drive 0, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=0 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-12 Drive 2, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=2 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-13 Drive 4, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=4 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-14 Drive 6, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=6 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-15 Drive 8, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=8 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-16 Drive 10, clip 5 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=10 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
-17 Sag 0, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=0 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
-18 Sag 3, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=3 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
-19 Sag 6, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=6 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
-20 Sag 10, crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=10 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
-21 Sag 0, lead - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8|sag=0 drive=6 clip=3 volume=5 treble=5 middle=6 bass=4 presence=6 master=8|group=saglead
-22 Sag 5, lead - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8|sag=5 drive=6 clip=3 volume=5 treble=5 middle=6 bass=4 presence=6 master=8|group=saglead
-23 Sag 10, lead - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8|sag=10 drive=6 clip=3 volume=5 treble=5 middle=6 bass=4 presence=6 master=8|group=saglead
+05 Clean - drive 0, clip 0, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=0 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+06 Clean - drive 2, clip 0, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=2 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+07 Edge of breakup - drive 4, clip 0, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=4 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+08 Crunch - drive 6, clip 0, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=6 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+09 Lead - drive 8, clip 0, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=8 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+10 Lead - drive 10, clip 0, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=10 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+11 Clean - drive 0, clip 5, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=0 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+12 Clean - drive 2, clip 5, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=2 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+13 Edge of breakup - drive 4, clip 5, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=4 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+14 Crunch - drive 6, clip 5, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=6 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+15 Lead - drive 8, clip 5, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=8 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+16 Lead - drive 10, clip 5, volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=10 clip=5 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
+17 Heavy crunch, sag 0 - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=0 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
+18 Heavy crunch, sag 3 - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=3 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
+19 Heavy crunch, sag 6 - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=6 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
+20 Heavy crunch, sag 10 - volume 7, treble 4, middle 7, bass 5, presence 6, master 9|sag=10 volume=7 treble=4 middle=7 bass=5 presence=6 master=9|group=sagcrunch
+21 Lead, sag 0 - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8|sag=0 drive=6 clip=3 volume=5 treble=5 middle=6 bass=4 presence=6 master=8|group=saglead
+22 Lead, sag 5 - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8|sag=5 drive=6 clip=3 volume=5 treble=5 middle=6 bass=4 presence=6 master=8|group=saglead
+23 Lead, sag 10 - drive 6, clip 3, volume 5, treble 5, middle 6, bass 4, presence 6, master 8|sag=10 drive=6 clip=3 volume=5 treble=5 middle=6 bass=4 presence=6 master=8|group=saglead
 24 Dark clean - volume 4, treble 2, middle 5, bass 6, presence 3, master 6.5, shift|volume=4 treble=2 middle=5 bass=6 presence=3 master=6.5 shift=1
 25 Bright clean - volume 4, treble 7, middle 3, bass 5, presence 7, master 6.5, bright|volume=4 treble=7 middle=3 bass=5 presence=7 master=6.5 bright=1
 26 Mid lead - drive 8, volume 5, treble 3, middle 9, bass 3, presence 5, master 7, sag 4|drive=8 volume=5 treble=3 middle=9 bass=3 presence=5 master=7 sag=4

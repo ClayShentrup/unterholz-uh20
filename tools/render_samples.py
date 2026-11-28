@@ -7,6 +7,11 @@ permutations.txt lines are  name|key=value ...  with an optional third field  |g
 one that puts the group's first sample at -18 LUFS, so a knob that changes level (Sag) is heard doing it. Each grouped sample's
 intended offset from -18 is written to docs/samples/levels.json, which tools/check_samples.py reads.
 
+Every name starts with what the setting measurably is, and the script refuses to run if a name disagrees. It measures distortion
+of a 196 Hz tone at medium picking level (0.1) through the AMP output: under 5% is Clean, 5-15% Edge of breakup, 15-30% Crunch,
+over 30% Heavy crunch, or Lead when the Drive stage is on. `render_samples.py --check-labels` runs only that check (no DI needed,
+CI runs it).
+
 Usage: render_samples.py [DI.wav] [--only 06,07,...]  (--only: just the samples whose numbers are listed; a grouped sample also
 renders the rest of its group so they share the gain)"""
 import numpy as np, soundfile as sf, pyloudnorm as pl, subprocess, os, sys, tempfile, json
@@ -14,8 +19,33 @@ from scipy.ndimage import minimum_filter1d
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); T = tempfile.mkdtemp()
 args = sys.argv[1:]; ONLY = None
 if "--only" in args: i = args.index("--only"); ONLY = set(args[i + 1].split(",")); del args[i:i + 2]
-DI = args[0] if args else os.path.expanduser("~/rindu/samples/src/puzzle_lead_cut.wav")
 CLI = os.path.join(R, "build", "uh20_cli")
+
+def medium_thd(knobs, f=196.0, a=0.1):
+    t = np.arange(2 * 48000) / 48000; (a * np.sin(2 * np.pi * f * t) * np.minimum(1, t / 0.02)).astype(np.float32).tofile(f"{T}/s.f32")
+    subprocess.run([CLI, f"{T}/s.f32", f"{T}/s.out", "48000", "output=1"] + knobs.split(), check=True)
+    y = np.fromfile(f"{T}/s.out", np.float32).astype(float)[28800:76800]; y -= y.mean()
+    Y = np.abs(np.fft.rfft(y * np.blackman(len(y)))) ** 2; fr = np.fft.rfftfreq(len(y), 1 / 48000)
+    H = [Y[np.abs(fr - k * f) < 5].sum() for k in range(1, 60)]; return 100 * np.sqrt(sum(H[1:]) / H[0])
+
+def character(knobs):
+    d = medium_thd(knobs); drive = float(dict(kv.split("=") for kv in knobs.split()).get("drive", 0))
+    c = "clean" if d < 5 else "edge of breakup" if d < 15 else "crunch" if d < 30 else ("lead" if drive >= 0.05 else "heavy crunch")
+    return c, d
+
+def check_labels():
+    bad = 0
+    for l in open(f"{R}/docs/samples/permutations.txt"):
+        if not l.strip(): continue
+        name, knobs = l.rstrip("\n").split("|")[:2]; c, d = character(knobs)
+        head = name[3:].split(" - ")[0].lower()
+        ok = c in head and not (c == "crunch" and "heavy crunch" in head)
+        bad += not ok; print(f"{'PASS' if ok else 'FAIL'}  {name[:50]}: measures {c} ({d:.1f}% at medium picking)")
+    return bad
+
+if "--check-labels" in args: sys.exit(check_labels())
+if check_labels(): sys.exit("a sample's name disagrees with what it measures; rename it first")
+DI = args[0] if args else os.path.expanduser("~/rindu/samples/src/puzzle_lead_cut.wav")
 x, sr = sf.read(DI); x = x if x.ndim == 1 else x.mean(1)
 np.concatenate([x, np.zeros(int(0.5 * sr))]).astype(np.float32).tofile(f"{T}/in.f32")
 meter = pl.Meter(sr)
