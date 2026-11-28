@@ -7,6 +7,14 @@
 
 namespace jk {
 
+// UH20_PROFILE=1: solver call and iteration counts (tools/uh20_prof prints them); nothing otherwise
+#if UH20_PROFILE
+inline long count[16] = {};
+#define JK_COUNT(k) (++jk::count[k])
+#else
+#define JK_COUNT(k) ((void)0)
+#endif
+
 // ---------------------------------------------------------------- linear networks (state-space, solved once per knob move)
 template <int N>
 struct Network {
@@ -141,6 +149,14 @@ struct J201 {
         const double cl = 1 + Lambda * vds;
         return vds >= vov ? Beta * vov * vov * cl : Beta * vds * (2 * vov - vds) * cl;
     }
+    // the same current with its partial derivatives (gm = d id / d vgs, gds = d id / d vds), for the analytic Newtons
+    static inline double idd(double vgs, double vds, double& gm, double& gds) {
+        const double vov = vgs - Vto;
+        if (vov <= 0 || vds <= 0) { gm = gds = 0; return 0; }
+        const double cl = 1 + Lambda * vds;
+        if (vds >= vov) { const double q = Beta * vov * vov; gm = 2 * Beta * vov * cl; gds = q * Lambda; return q * cl; }
+        const double t = vds * (2 * vov - vds); gm = 2 * Beta * vds * cl; gds = Beta * (2 * (vov - vds) * cl + t * Lambda); return Beta * t * cl;
+    }
     static constexpr double Cgd0 = 4.06e-12, Cgs0 = 3.002e-12, Fc = 0.5;
     // junction depletion capacitance at reverse bias v (SPICE form, linear above Fc*Pb)
     static double cj(double c0, double v) {
@@ -153,6 +169,14 @@ struct J201 {
         const double diff = Is * (std::exp(std::min(v / (N * VT), 80.0)) - 1);
         const double fac = std::pow((1 - std::min(v, 0.99 * Pb) / Pb) * (1 - std::min(v, 0.99 * Pb) / Pb) + 0.005, M / 2);
         return diff + Isr * (std::exp(std::min(v / (Nr * VT), 80.0)) - 1) * fac;
+    }
+    // the same current and its slope from one exponential (N = 1, Nr = 2: the diffusion term's exponential is the square of the
+    // recombination term's) and one power
+    static inline double igd(double v, double& slope) {
+        const double e2 = std::exp(std::min(v / (Nr * VT), 40.0)), e1 = e2 * e2, u = 1 - std::min(v, 0.99 * Pb) / Pb, b = u * u + 0.005;
+        const double fac = std::pow(b, M / 2), dfac = v < 0.99 * Pb ? -M * fac / b * u / Pb : 0.0;
+        slope = Is * e1 / (N * VT) + Isr * (e2 / (Nr * VT) * fac + (e2 - 1) * dfac);
+        return Is * (e1 - 1) + Isr * (e2 - 1) * fac;
     }
 };
 
@@ -238,6 +262,30 @@ inline double diodeString(double voc, double rt, double isUp, double nvtUp, doub
     return up ? i : -i;
 }
 
+// the same string solved by Newton on the drop across the diodes, x + rt is expm1(x/nvt) = |voc| (convex, rising), from last
+// sample's drop, bracketed in [0, |voc|]; stops after a step under 1e-13 V; one exponential a step instead of Lambert's W's logs
+struct DiodeStringSolver {
+    double xUp = 0, xDn = 0;
+    inline double solve(double voc, double rt, double isUp, double nvtUp, double isDn, double nvtDn) {
+        const bool up = voc >= 0; const double is = up ? isUp : isDn, nvt = up ? nvtUp : nvtDn, av = std::abs(voc), k = rt * is, inv = 1 / nvt;
+        double& xl = up ? xUp : xDn;
+        double lo = 0, hi = av, x = std::clamp(xl, lo, hi);
+        bool ok = false;
+        JK_COUNT(8);
+        for (int it = 0; it < 60; ++it) {
+            JK_COUNT(9);
+            const double e = std::exp(x * inv), h = x + k * (e - 1) - av;
+            if (h > 0) hi = x; else lo = x;
+            double n = x - h / (1 + k * inv * e); if (!(n >= lo && n <= hi)) n = 0.5 * (lo + hi);
+            const bool done = std::abs(n - x) < 1e-13; x = n; if (done) { ok = true; break; }
+        }
+        if (!ok) return diodeString(voc, rt, isUp, nvtUp, isDn, nvtDn);
+        xl = x;
+        const double i = x * inv < 30 ? is * std::expm1(x * inv) : (av - x) / rt;
+        return up ? i : -i;
+    }
+};
+
 // ---------------------------------------------------------------- gate conduction
 // a gate fed from a Thevenin source (vth, rth): the J201 gate junction conducts once forward-biased against the source.
 // Solve (vth - vg)/rth = Ig(vg - vs) by bracketed Newton (monotone; always converges).
@@ -246,6 +294,36 @@ inline double gateClamp(double vth, double rth, double vs) {
     // (vth - g)/rth - Ig(g - vs) falls as g rises
     return solve1([&](double g) { return (vth - g) / rth - J201::ig(g - vs); }, std::min(vth, vs) - 1, vth, std::min(vth, vs + 0.5), 1e-10, 1e-7);
 }
+// the same clamp with an exact early-out: below a forward bias vOff (gateOff(rth), worked out once per knob move) the gate surely
+// draws under 1e-9 V / rth, which is the test gateClamp makes with the junction's two exponentials and a power, so the answer is
+// the same without evaluating them
+inline double gateOff(double rth) {   // the largest bias at which Ig rth is still under 1e-9 (bisection; Ig rises with the bias)
+    double lo = -1, hi = 1;
+    for (int it = 0; it < 80; ++it) { const double m = 0.5 * (lo + hi); if (J201::ig(m) * rth < 1e-9) lo = m; else hi = m; }
+    return lo - 1e-6;   // a margin: between it and the threshold gateClamp's own test decides
+}
+inline double gateClamp(double vth, double rth, double vs, double vOff) { if (vth - vs < vOff) return vth; JK_COUNT(10); return gateClamp(vth, rth, vs); }
+// a gate's clamp with the exact early-out and, when it conducts, Newton with the junction's analytic slope from the last
+// conducting sample's gate voltage, bracketed as gateClamp's; stops after a step under 1e-10 V (gateClamp's tolerance)
+struct GateClamp {
+    double vOff = 0, g = 0; bool was = false;
+    inline double operator()(double vth, double rth, double vs) {
+        if (vth - vs < vOff) { was = false; return vth; }
+        if (J201::ig(vth - vs) * rth < 1e-9) { was = false; return vth; }
+        JK_COUNT(10);
+        double lo = std::min(vth, vs) - 1, hi = vth, x = was ? std::clamp(g, lo, hi) : std::min(vth, vs + 0.5);
+        const double ir = 1 / rth;
+        for (int it = 0; it < 60; ++it) {
+            JK_COUNT(11);
+            double sl; const double h = (vth - x) * ir - J201::igd(x - vs, sl);
+            if (h > 0) lo = x; else hi = x;
+            double n = x + h / (ir + sl); if (!(n >= lo && n <= hi)) n = 0.5 * (lo + hi);
+            if (std::abs(n - x) < 1e-10 || hi - lo < 1e-10) { g = n; was = true; return n; }
+            x = n;
+        }
+        was = false; return gateClamp(vth, rth, vs);
+    }
+};
 
 // ---------------------------------------------------------------- circuit blocks, solved exactly every sample
 // Common-source J201 stage. Drain: Rd to Vdd, loaded by a linear network (its port current i = G vd - J). Source: Rs1 in series
@@ -350,7 +428,9 @@ struct GainFollower {
 // A J201 common-source stage with any source network (driven by the source current, Network with rs = 0, inj = 0) and any
 // drain load given as a current function load(vd). Unknowns: drain current I, drain voltage vd; solved by Newton every sample.
 struct JStage {
-    double Vdd = 18, Rd = 47e3, id = 0, vd = 0, vs = 0, vd0 = 0;
+    double Vdd = 18, Rd = 47e3, id = 0, vd = 0, vs = 0, vd0 = 0, idPrev = 0, idPrev2 = 0, gLast = -1, igdC = 0;
+    static constexpr double IMAX = 4 * J201::Beta * J201::Vto * J201::Vto * 4 + 1e-3;   // the bracket's top (any stage here: 18 V / Rd is less)
+    static constexpr double TOL_I = 1e-10;   // tickLin's last step (A): quadratic convergence leaves the root within ~1e-16 A
     Network<3> src;
     void build(double fs) { src.rs = 0; src.inj = 0; src.out = 0; src.build(fs); }
     double vsFor(double I) const { return src.injV(0) + src.Zi * I; }
@@ -358,7 +438,37 @@ struct JStage {
         double lo = 0, hi = Vdd / Rd;
         for (int it = 0; it < 70; ++it) { const double m = 0.5 * (lo + hi); src.initDC(0, m); const double sv = vsFor(m), d = Vdd - Rd * m;
             if (J201::id(-sv, d - sv) > m) lo = m; else hi = m; }
-        id = 0.5 * (lo + hi); src.initDC(0, id); vs = vsFor(id); vd = vd0 = Vdd - Rd * id;
+        id = idPrev = idPrev2 = 0.5 * (lo + hi); src.initDC(0, id); vs = vsFor(id); vd = vd0 = Vdd - Rd * id;
+    }
+    // the drain load is linear (i = G vd - J), so the drain voltage follows from the current and the stage is one equation in the
+    // current: Newton with the model's own slope, from last sample's current, inside a bracket (the residual falls as the current
+    // rises). It stops after a step under 1e-14 A (quadratic convergence: the root is then exact to rounding); the general
+    // solver below is the fallback.
+    inline double tickLin(double vg, double G, double J) {
+        if (G != gLast) { gLast = G; igdC = 1 / (1 / Rd + G); }   // the load's conductance changes only when a knob moves
+        const double s0 = src.injV(0), z = src.Zi, igd = igdC, vdk = (Vdd / Rd + J) * igd;
+        // start: the current extrapolated (quadratic) from the last three samples, inside the bracket
+        double lo = 0, hi = IMAX, I = std::clamp(3 * (id - idPrev) + idPrev2, lo, hi);
+        const double dvds = igd + z;
+        JK_COUNT(0);
+        for (int it = 0; it < 40; ++it) {
+            JK_COUNT(1);
+            double gm, gds; const double sv = s0 + z * I, vgs = vg - sv, vds = vdk - I * igd - sv, f = J201::idd(vgs, vds, gm, gds) - I;
+            if (f > 0) lo = I; else hi = I;
+            const double df = -gm * z - gds * dvds - 1;
+            double n = I - f / df;
+            if (!(n >= lo && n <= hi)) n = 0.5 * (lo + hi);
+            const double step = std::abs(n - I), vov = vgs - J201::Vto;
+            // in saturation the residual's curvature is known: the error left after this step is about |f''| step^2 / (2 |f'|);
+            // when that is under 1e-17 A the step is final (the bypassed stages are nearly linear in the current: one step). It
+            // holds only if the step cannot leave saturation: the margins to cut-off and to triode must exceed twice the step's
+            // effect on them.
+            const bool sat = vov > 2 * z * step && vds - vov > 2 * igd * step;
+            if (step < TOL_I || (sat && 2 * J201::Beta * (z * z * (1 + J201::Lambda * vds) + 2 * z * vov * J201::Lambda * dvds) * step * step < -2e-17 * df)) { idPrev2 = idPrev; idPrev = id; id = n; vd = vdk - n * igd; vs = s0 + z * n; src.process(0, id); return vd; }
+            I = n;
+        }
+        JK_COUNT(2); idPrev2 = idPrev; idPrev = id;
+        return tick(vg, [&](double v) { return G * v - J; });
     }
     template <class L> inline double tick(double vg, L&& load) {
         {   // fast path: Newton on (I, vd) from last sample's solution
@@ -383,13 +493,66 @@ struct JStage {
 // J201 long-tailed pair: both sources on a tail resistor to Vn, drains on Rd from Vp; drain 2 carries a load (port G, J).
 // Unknowns: tail voltage, the two drain currents. Output: drain 2 (non-inverting from gate 1, inverting from gate 2).
 struct LongTailPair {
-    double Vp = 15, Vn = -15, Rd = 22e3, Rt = 30e3, vt = 0, i1 = 0, i2 = 0, d2 = 0, d20 = 0;
+    double Vp = 15, Vn = -15, Rd = 22e3, Rt = 30e3, vt = 0, i1 = 0, i2 = 0, d2 = 0, d20 = 0, vtPrev = 0, vtPrev2 = 0;
+    static constexpr double TOL_T = 1e-7;   // tickFast's last step (V): quadratic convergence leaves the tail voltage within ~1e-13 V
     double iinj = 0;   // current injected into the tail node from outside (the UH-20's Sag transconductor): the pair carries less
     void settle() {
         double x[3] = {-0.2, 2.5e-4, 2.5e-4}; const double sc[3] = {1.0, 1e-4, 1e-4};
         auto F = [&](const double* y, double* r) { const double d1 = Vp - Rd * y[1], dd = Vp - Rd * y[2];
             r[0] = (J201::id(-y[0], d1 - y[0]) - y[1]) * 1e4; r[1] = (J201::id(-y[0], dd - y[0]) - y[2]) * 1e4; r[2] = (y[1] + y[2] - (y[0] - Vn) / Rt) * 1e4; };
-        newton<3>(F, x, sc, 200); vt = x[0]; i1 = x[1]; i2 = x[2]; d2 = d20 = Vp - Rd * i2;
+        newton<3>(F, x, sc, 200); vt = vtPrev = vtPrev2 = x[0]; i1 = x[1]; i2 = x[2]; d2 = d20 = Vp - Rd * i2;
+    }
+    // one side's current for a tail voltage t, its drain at A - B i: closed form in saturation (the current is then linear in
+    // the drain voltage), otherwise Newton with the model's slope; didt: its slope against the tail voltage (implicit function)
+    // curv: an upper bound on |d2i/dt2| in saturation (2 Beta (1 + lambda (A - t)) / (1 + q lambda B), doubled for the terms
+    // left out), or -1 when the side is in triode
+    // marg: how far t may move before the side leaves saturation (to cut-off or to triode), to first order
+    static inline double side(double g, double t, double A, double B, double i0, double& didt, double& curv, double& marg) {
+        const double vov = g - t - J201::Vto;
+        if (vov <= 0) { didt = 0; curv = -1; marg = 0; return 0; }
+        const double q = J201::Beta * vov * vov, c = 1 + J201::Lambda * (A - t), r = 1 / (1 + q * J201::Lambda * B), i = q * c * r, vds = A - B * i - t;
+        double gm, gds;
+        if (vds >= vov) {
+            gm = 2 * J201::Beta * vov * (1 + J201::Lambda * vds); didt = -(gm + q * J201::Lambda) * r;
+            curv = 4 * J201::Beta * c * r; marg = std::min(vov, (vds - vov) / std::max(-B * didt, 1e-30)); return i;
+        }
+        curv = -1; marg = 0;
+        double lo = 0, hi = std::max((A - t) / B, 0.0), x = std::clamp(i0, lo, hi);
+        JK_COUNT(6);
+        for (int it = 0; it < 60; ++it) {
+            JK_COUNT(7);
+            const double f = J201::idd(g - t, A - B * x - t, gm, gds) - x;
+            if (f > 0) lo = x; else hi = x;
+            double n = x - f / (-gds * B - 1); if (!(n >= lo && n <= hi)) n = 0.5 * (lo + hi);
+            const bool done = std::abs(n - x) < 1e-15; x = n; if (done || hi - lo < 1e-16) break;
+        }
+        J201::idd(g - t, A - B * x - t, gm, gds); didt = -(gm + gds) / (gds * B + 1);
+        return x;
+    }
+    // the pair as one equation in the tail voltage (each side solved for it): Newton with the analytic slope from last sample's
+    // tail voltage, bracketed; stops after a step under 1e-11 V (quadratic: exact to rounding); the general solver is the fallback
+    inline double tickFast(double g1, double g2, double G, double J) {
+        const double gd = 1 / Rd + G, A2 = (Vp / Rd + J) / gd, B2 = 1 / gd, irt = 1 / Rt;
+        double lo = Vn, hi = Vp, t = std::clamp(3 * (vt - vtPrev) + vtPrev2, Vn, Vp);   // quadratic extrapolation
+        JK_COUNT(3);
+        for (int it = 0; it < 60; ++it) {
+            JK_COUNT(4);
+            double d1, d2s, c1, c2, m1, m2; const double a = side(g1, t, Vp, Rd, i1, d1, c1, m1), b = side(g2, t, A2, B2, i2, d2s, c2, m2);
+            i1 = a; i2 = b;
+            const double F = a + b - (t - Vn) * irt + iinj, dF = d1 + d2s - irt;
+            if (F > 0) lo = t; else hi = t;
+            double n = t - F / dF; if (!(n >= lo && n <= hi)) n = 0.5 * (lo + hi);
+            const double step = std::abs(n - t);
+            // final when the step is tiny, or (both sides in saturation, and the step too small to take either out of it, with a
+            // factor 2 to spare) when the error it leaves, about |F''| step^2 / (2 |F'|), is under 1e-13 V; the currents then follow
+            // the last step to first order (the error is second order)
+            if (step < TOL_T || (c1 >= 0 && c2 >= 0 && 2 * step < std::min(m1, m2) && (c1 + c2) * step * step < -2e-13 * dF)) {
+                vtPrev2 = vtPrev; vtPrev = vt; vt = n; i1 += d1 * (n - t); i2 += d2s * (n - t); d2 = (Vp / Rd + J - i2) / gd; return d2;
+            }
+            t = n;
+        }
+        JK_COUNT(5); vtPrev2 = vtPrev; vtPrev = vt;
+        return tick(g1, g2, G, J);
     }
     inline double tick(double g1, double g2, double G, double J) {
         const double gd = 1 / Rd + G, imax = 4e-3;

@@ -160,6 +160,49 @@ int main(int argc, char** argv) {
         }
         check(worst < 1e-6, "Clip LEDs: KVL error over -60..60 V", "%.2g V (limit %.0g)", worst, 1e-6);
     }
+    {   // the analytic solvers the engine runs (JfetKit.h: tickLin, tickFast, GateClamp, DiodeStringSolver) find the same roots as
+        // the general ones the reference engine runs, sample after sample, from the same states, over a hard, noisy drive
+        unsigned r = 777; auto rnd = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0 - 0.5; };
+        const double fs = 384000; double wStage = 0, wPair = 0, wGate = 0, wLed = 0;
+        for (int cfg = 0; cfg < 3; ++cfg) {
+            jk::JStage a; a.Vdd = 18; a.Rd = cfg == 0 ? 68e3 : 47e3; a.src.clear();
+            if (cfg == 0) { a.src.R(0, 1, 3300); a.src.R(1, -1, 1500); a.src.C(1, -1, 0.68e-6); } else if (cfg == 1) { a.src.R(0, -1, 2200); a.src.C(0, -1, 22e-6); } else a.src.R(0, -1, 1500);
+            a.build(fs); a.settle(); jk::JStage b = a; const double G = cfg == 1 ? 1 / 100e3 : 0;
+            for (int i = 0; i < 200000; ++i) {   // the gate driven through 10k, clamped as in the engine
+                const double vg = jk::gateClamp(2.5 * std::sin(2 * kPi * 330 * i / fs) * (0.5 + rnd()) + 0.3 * rnd(), 10e3, b.vs), J = G * 9 + 1e-5 * rnd();
+                const double va = a.tickLin(vg, G, J), vb = b.tick(vg, [&](double v) { return G * v - J; });
+                wStage = std::max(wStage, std::abs(va - vb));
+            }
+        }
+        {
+            jk::LongTailPair a; a.settle(); jk::LongTailPair b = a; const double G = 1 / 47e3;
+            for (int i = 0; i < 200000; ++i) {
+                const double g1 = 6 * std::sin(2 * kPi * 220 * i / fs) * (0.5 + rnd()), g2 = 0.5 * rnd(), J = G * a.d20 + 2e-5 * rnd();
+                a.iinj = b.iinj = 1e-4 * (0.5 + 0.5 * std::sin(2 * kPi * 3 * i / fs));
+                wPair = std::max(wPair, std::abs(a.tickFast(g1, g2, G, J) - b.tick(g1, g2, G, J)));
+            }
+        }
+        {
+            jk::GateClamp c; double rth = 1e3;
+            for (int i = 0; i < 200000; ++i) {
+                if (i % 50000 == 0) { rth = i ? rth * 10 : 1e3; c.vOff = jk::gateOff(rth); }   // 1k .. 1M, the gates' sources here
+                const double vs = 0.6 + 0.3 * rnd(), vth = vs + 3 * std::sin(2 * kPi * 500 * i / fs) + 0.2 * rnd();
+                wGate = std::max(wGate, std::abs(c(vth, rth, vs) - jk::gateClamp(vth, rth, vs)));
+            }
+        }
+        {
+            jk::DiodeStringSolver d; const double VT = jk::VT, IS1 = 0.01 / std::exp(1.8 / (2 * VT)), IS2 = 0.01 / std::exp(3.6 / (4 * VT));
+            for (double rt : {6800.0 + 220, 6800.0 + 47e3}) for (int i = 0; i < 100000; ++i) {
+                const double voc = 20 * std::sin(2 * kPi * 400 * i / fs) * (0.5 + rnd());
+                const double a = d.solve(voc, rt, IS1, 2 * VT, IS2, 4 * VT), b = jk::diodeString(voc, rt, IS1, 2 * VT, IS2, 4 * VT);
+                wLed = std::max(wLed, std::abs(a - b) * rt);
+            }
+        }
+        check(wStage < 1e-9, "J201 stage: analytic Newton = general solver", "%.2g V (limit %.0g)", wStage, 1e-9);
+        check(wPair < 1e-9, "long-tailed pair: analytic Newton = general solver", "%.2g V (limit %.0g)", wPair, 1e-9);
+        check(wGate < 1e-9, "gate clamp: early-out and analytic Newton = general", "%.2g V (limit %.0g)", wGate, 1e-9);
+        check(wLed < 1e-9, "Clip LEDs: Newton = Lambert W (current x resistance)", "%.2g V (limit %.0g)", wLed, 1e-9);
+    }
 
     std::printf("power section\n");
     for (double pres : {0.0, 5.0, 10.0}) for (double mas : {3.0, 10.0}) {   // the feedback loop settles after an impulse at every setting

@@ -13,6 +13,20 @@
 #include <initializer_list>
 #include "JfetKit.h"
 
+// UH20_PROFILE=1 (tools/uh20_prof): time each stage with the ARM virtual counter (a lap per stage boundary); compiles to
+// nothing otherwise
+#if UH20_PROFILE
+#include <cstdint>
+namespace uh20prof {
+inline uint64_t now() { uint64_t v; asm volatile("isb\n mrs %0, cntvct_el0" : "=r"(v)); return v; }
+inline uint64_t acc[24] = {}, cnt[24] = {}, last = 0;
+inline void lap(int k) { const uint64_t t = now(); acc[k] += t - last; ++cnt[k]; last = t; }
+}
+#define UH20_LAP(k) uh20prof::lap(k)
+#else
+#define UH20_LAP(k) ((void)0)
+#endif
+
 namespace uh20 {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -72,7 +86,8 @@ struct Params {
 class Engine {
 public:
     void prepare(double sampleRate) {
-        srate = sampleRate; FSI = srate * OS;
+        srate = sampleRate; OS = osFor(srate); FSI = srate * OS;
+        XF = kRef ? 32768 : (int)std::lround(32768 * FSI / 384000);
         aaup.set(18000, FSI); aadn.set(18000, FSI);
         built = false; update(p, true); reset();
     }
@@ -83,7 +98,7 @@ public:
         q1.settle(); qd.settle(); q2.settle(); q3.settle(); ltp.settle();
         rN1.initDC(don ? qd.vd0 : q1.vd0); rN2.initDC(q2.vd0); rN3.initDC(q3.vd0); dN.initDC(q1.vd0); dL.initDC(qd.vd0);
         cpl.initDC(ltp.d20); fb.initDC(0);
-        vout = 0; vposR = vnegR = railRest(); ph = 0; xf = 0; isense = 0; vctl = 0; ltp.iinj = 0;
+        vout = 0; vposR = vnegR = railRest(); ph = 0; psin = 0; pcos = 1; xf = 0; isense = 0; vctl = 0; ltp.iinj = 0;
     }
     void setParams(const Params& np) { if (!(np == p)) update(np, false); }
     void process(float* buf, int n) { for (int i = 0; i < n; ++i) buf[i] = (float)tick(buf[i]); }
@@ -91,8 +106,13 @@ public:
         const double xin = in * p.inputVolts;
         double ydec = 0;
         for (int k = 0; k < OS; ++k) {
+            UH20_LAP(0);
             const double u = aaup.process(k == 0 ? xin * OS : 0.0);
-            const double z = aadn.process(amp(u));
+            UH20_LAP(1);
+            const double a = amp(u);
+            UH20_LAP(12);
+            const double z = aadn.process(a);
+            UH20_LAP(13);
             if (k == 0) ydec = z;
         }
         return ydec * gout;
@@ -104,10 +124,29 @@ public:
     static constexpr double GLM = 1 + 22e3 / 5.6e3;   // LM3886 non-inverting gain
     static constexpr double KREC = 1.0 / 20;   // speaker output to the cab simulator's input (19.1k/1k divider)
     double CCOMP = 220e-12;                    // compensation capacitor on the pair's output drain
+    // UH20_REFERENCE=1 builds the reference engine (uh20_cli_ref): 8x oversampling and the original general solvers, the engine
+    // tests/reference was rendered with. The default build solves the same circuit with the analytic Newtons in JfetKit.h.
+#if UH20_REFERENCE
+    static constexpr bool kRef = true;
+#undef UH20_OS
+#define UH20_OS 8
+#else
+    static constexpr bool kRef = false;
+#endif
 #ifndef UH20_OS
 #define UH20_OS 8
 #endif
-    static constexpr int OS = UH20_OS;
+    // the oversampling factor: UH20_OS (8) at 44.1/48 kHz; at higher host rates the same internal rate (about 384 kHz), which is
+    // what the solvers and the aliasing budget were set at: 4x at 88.2/96 kHz, 2x at 176.4/192 kHz (the reference: 8x at any rate)
+    static int osFor(double sr) { return kRef || sr < 80000 ? UH20_OS : std::max(1, sr < 160000 ? UH20_OS / 2 : UH20_OS / 4); }
+    int OS = UH20_OS;
+    jk::GateClamp gc1, gcD, gc2, gc3, gcL;   // the gates' clamps (early-out biases from jk::gateOff, per knob move)
+    jk::DiodeStringSolver led;
+    // the stage solves: the reference engine's general ones, or the analytic ones (the same roots, to rounding)
+    static inline double gate(double vth, double rth, double vs, jk::GateClamp& c) { if constexpr (kRef) return jk::gateClamp(vth, rth, vs); else return c(vth, rth, vs); }
+    static inline double stage(jk::JStage& q, double vg, double G, double J) {
+        if constexpr (kRef) return q.tick(vg, [&](double v) { return G * v - J; }); else return q.tickLin(vg, G, J);
+    }
     Params p;
     double srate = 48000, FSI = 384000;
     Butter8 aaup, aadn;
@@ -125,7 +164,7 @@ public:
     jk::Network<2> fb;    // speaker -> 100k -> LTP gate 2 (4.7k; Presence: 0.1u + 5k)
     Biquad chp, cp1, cp2, clp1, clp2;
     double a1 = 0, a2 = 0, csc = 4.12 / 14.12, gout = 1;
-    bool jon = false, don = false, built = false; int xf = 0; static constexpr int XF = 32768;   // Drive switch fade: ~85 ms at 8x
+    bool jon = false, don = false, built = false; int xf = 0, XF = 32768;   // Drive switch fade: ~85 ms
     double rj = 1e9, rsup = 0.3, vout = 0, vposR = 30, vnegR = 30, ph = 0;
     // LEDs: a red LED one way, two in series the other (1.8 V at 10 mA each)
     static constexpr double NVT1 = 2.0 * jk::VT, NVT2 = 4.0 * jk::VT;
@@ -140,20 +179,22 @@ public:
     // ceiling (the pair's swing, tail current x drain resistor) comes down under hard playing and recovers as it eases
     static constexpr double SAG_K = 4.8, SAG_VMAX = 5.0, SAG_TS = 2e-3, SAG_TC = 100e3 * 0.68e-6, SAG_RVI = 30e3;
     double ksag = 0, isense = 0, vctl = 0;
+    double psin = 0, pcos = 1, rsin = 0, rcos = 1, grsup = 1, kres = 0, ksense = 0, kctl = 0;   // the default build's phasor and reciprocals
 
     // rail-to-rail op-amp follower on the 18 V preamp supply (e.g. OPA2197): unity gain, limited at its rails
     static double buf(double v) { return std::clamp(v, 0.02, VPRE - 0.02); }
 
     inline double amp(double vin) {
-        const double g1 = jk::gateClamp(vin, 1e3, q1.vs);
-        const double d1 = q1.tick(g1, [](double) { return 0.0; });   // drain drives an op-amp follower only
+        const double g1 = gate(vin, 1e3, q1.vs, gc1);
+        const double d1 = stage(q1, g1, 0, 0);   // drain drives an op-amp follower only
         double b1 = buf(d1);
+        UH20_LAP(2);
         if (don || xf > 0) {   // DRIVE: Q1's follower -> Drive pot -> the cascaded J201 -> its own follower, in place of Q1's
             // the gate conducts when driven hard: solve it against the network's Thevenin at the gate and put that current back
             // into the network, so the coupling capacitor charges (bias shift) as in the circuit
-            const double voc = dN.injV(b1), gd = jk::gateClamp(voc, dN.Zi, qd.vs), ig = (voc - gd) / dN.Zi;
+            const double voc = dN.injV(b1), gd = gate(voc, dN.Zi, qd.vs, gcD), ig = (voc - gd) / dN.Zi;
             dN.process(b1, -ig);
-            const double bs = buf(qd.tick(gd, [&](double v) { return dL.portG() * v - dL.portJ(); }));
+            const double bs = buf(stage(qd, gd, dL.portG(), dL.portJ()));
             dL.process(qd.vd);
             if (xf > 0) {   // the switch moving while playing: a short crossfade of the signal and a slower glide of the DC level,
                             // so it neither clicks nor thumps (the circuit's switch would pop; the plug-in does not need to)
@@ -162,36 +203,64 @@ public:
                 b1 = (1 - on) * (b1 - q1.vd0) + on * (bs - qd.vd0) + q1.vd0 + dc * (qd.vd0 - q1.vd0);
             } else b1 = bs;
         }
-        const double il = jon ? jk::diodeString(rN1.injV(b1), rj + rN1.Zi, ISLED, NVT1, ISLED2, NVT2) : 0.0;
+        UH20_LAP(3);
+        double il = 0;
+        if (jon) { if constexpr (kRef) il = jk::diodeString(rN1.injV(b1), rj + rN1.Zi, ISLED, NVT1, ISLED2, NVT2); else il = led.solve(rN1.injV(b1), rj + rN1.Zi, ISLED, NVT1, ISLED2, NVT2); }
+        UH20_LAP(4);
         const double w = rN1.process(b1, -il);
-        const double d2 = q2.tick(jk::gateClamp(w, rN1.rOut, q2.vs), [&](double vd) { return rN2.portG() * vd - rN2.portJ(); });
+        UH20_LAP(5);
+        const double d2 = stage(q2, gate(w, rN1.rOut, q2.vs, gc2), rN2.portG(), rN2.portJ());
+        UH20_LAP(6);
         const double g3 = rN2.process(d2);
-        const double d3 = q3.tick(jk::gateClamp(g3, rN2.rOut, q3.vs), [](double) { return 0.0; });
+        const double d3 = stage(q3, gate(g3, rN2.rOut, q3.vs, gc3), 0, 0);
+        UH20_LAP(7);
         const double g1raw = rN3.process(buf(d3)), g1rout = rN3.rOut;
+        UH20_LAP(8);
         // power section: long-tailed pair (gate 2 = the feedback network's output, from last sample's speaker voltage)
-        const double gp = jk::gateClamp(g1raw, g1rout, ltp.vt);
-        const double dp = ltp.tick(gp, fb.outV(vout), cpl.portG(), cpl.portJ());
+        const double gp = gate(g1raw, g1rout, ltp.vt, gcL);
+        double dp; if constexpr (kRef) dp = ltp.tick(gp, fb.outV(vout), cpl.portG(), cpl.portJ()); else dp = ltp.tickFast(gp, fb.outV(vout), cpl.portG(), cpl.portJ());
+        UH20_LAP(9);
         const double vp = cpl.process(dp);
         // LM3886 into the speaker, limited by its rails (a few volts of dropout)
         vout = std::clamp(GLM * vp, -(vnegR - DROP), vposR - DROP);
         fb.process(vout);
         // rails: full-wave rectified 60 Hz secondary through the supply resistance (winding + Sag) into the reservoirs
-        ph += 60.0 / FSI; if (ph >= 1) ph -= 1;
-        const double vsec = VPK * std::abs(std::sin(2 * kPi * ph)) + 0.9 - 0.9;
-        const double ip = (vout > 0 ? vout / RL : 0) + IQ, in = (vout < 0 ? -vout / RL : 0) + IQ;
-        vposR += ((vsec > vposR ? (vsec - vposR) / rsup : 0) - ip) / (CRES * FSI);
-        vnegR += ((vsec > vnegR ? (vsec - vnegR) / rsup : 0) - in) / (CRES * FSI);
-        // Sag: the speaker current, full-wave rectified and smoothed, sets the current the transconductor pulls from the regulator's
-        // adjust node (limited); the rail falls by that current times R2, through R2 || Cadj
-        isense += (std::abs(vout) / RL - isense) / (SAG_TS * FSI);
-        vctl += (std::min(ksag * isense, SAG_VMAX) - vctl) / (SAG_TC * FSI);
-        ltp.iinj = vctl / SAG_RVI;
+        double vsec;
+        if constexpr (kRef) {
+            ph += 60.0 / FSI; if (ph >= 1) ph -= 1;
+            vsec = VPK * std::abs(std::sin(2 * kPi * ph)) + 0.9 - 0.9;
+        } else {   // the same sine from a rotating phasor, re-anchored to the exact phase every cycle
+            ph += 60.0 / FSI;
+            if (ph >= 1) { ph -= 1; psin = std::sin(2 * kPi * ph); pcos = std::cos(2 * kPi * ph); }
+            else { const double sn = psin * rcos + pcos * rsin; pcos = pcos * rcos - psin * rsin; psin = sn; }
+            vsec = VPK * std::abs(psin);
+        }
+        if constexpr (kRef) {
+            const double ip = (vout > 0 ? vout / RL : 0) + IQ, in = (vout < 0 ? -vout / RL : 0) + IQ;
+            vposR += ((vsec > vposR ? (vsec - vposR) / rsup : 0) - ip) / (CRES * FSI);
+            vnegR += ((vsec > vnegR ? (vsec - vnegR) / rsup : 0) - in) / (CRES * FSI);
+            // Sag: the speaker current, full-wave rectified and smoothed, sets the current the transconductor pulls from the regulator's
+            // adjust node (limited); the rail falls by that current times R2, through R2 || Cadj
+            isense += (std::abs(vout) / RL - isense) / (SAG_TS * FSI);
+            vctl += (std::min(ksag * isense, SAG_VMAX) - vctl) / (SAG_TC * FSI);
+            ltp.iinj = vctl / SAG_RVI;
+        } else {   // the same with the divisions as precomputed reciprocals
+            const double il = vout * (1 / RL), ip = (vout > 0 ? il : 0) + IQ, in = (vout < 0 ? -il : 0) + IQ;
+            vposR += ((vsec > vposR ? (vsec - vposR) * grsup : 0) - ip) * kres;
+            vnegR += ((vsec > vnegR ? (vsec - vnegR) * grsup : 0) - in) * kres;
+            isense += (std::abs(il) - isense) * ksense;
+            vctl += (std::min(ksag * isense, SAG_VMAX) - vctl) * kctl;
+            ltp.iinj = vctl * (1 / SAG_RVI);
+        }
+        UH20_LAP(10);
         // outputs: REC = the speaker voltage through the 1/20 divider into the cab simulator; AMP = the same, uncabbed
         const double y = vout * KREC;
         if (p.output == 1) return y;
         double c = chp.process(y * csc);
         c = c + a1 * cp1.process(c) + a2 * cp2.process(c);
-        return clp2.process(clp1.process(c));
+        c = clp2.process(clp1.process(c));
+        UH20_LAP(11);
+        return c;
     }
 
     void update(const Params& np, bool force) {
@@ -250,7 +319,9 @@ public:
         // ---- power: long-tailed pair (J201 x2, 22k drains, 30k tail, +/-15 V), coupling into the LM3886, feedback with Presence
         { auto& n = cpl; n.clear(); n.rs = 1; n.C(0, -1, CCOMP); n.C(0, 1, 1e-6); n.R(1, -1, 47e3); n.out = 1; n.build(fs); }   // CCOMP: dominant-pole compensation at the pair's output
         { auto& n = fb; n.clear(); n.rs = 100e3; n.R(0, -1, 4700); n.C(0, 1, 0.1e-6); n.R(1, -1, 5000 * (1 - clampd(p.presence / 10, 0, 1)) + 47); n.out = 0; n.build(fs); }
-        rsup = 0.3;   // the secondary's winding resistance (v0.3's Sag rheostat in the supply is gone: Sag acts on the pair, above)
+        rsup = 0.3; grsup = 1 / rsup; kres = 1 / (CRES * fs); ksense = 1 / (SAG_TS * fs); kctl = 1 / (SAG_TC * fs);
+        rsin = std::sin(2 * kPi * 60.0 / fs); rcos = std::cos(2 * kPi * 60.0 / fs);
+        // rsup: the secondary's winding resistance (v0.3's Sag rheostat in the supply is gone: Sag acts on the pair, above)
         ksag = SAG_K * clampd(p.sag / 10, 0, 1);
         // cab simulator: Sallen-Key high-pass, two MFB band-passes summed in, two Sallen-Key low-passes (active filters on E96 values),
         // fitted through this circuit at Volume 5, Treble 3, Middle 7, Bass 5, Presence 5, Master 6.5 to the measured studio clean
@@ -260,6 +331,7 @@ public:
         cp2.bp2(2791.552, 2.7093, fs); a2 = std::pow(10.0, 9.8481 / 20) - 1;
         clp1.lp2(4855.70, 1.1474, fs); clp2.lp2(4855.70, 1.1474, fs);
         gout = std::pow(10.0, p.trimDb / 20) / (p.output == 1 ? 2.0 : 0.5);
+        gc1.vOff = jk::gateOff(1e3); gcD.vOff = jk::gateOff(dN.Zi); gc2.vOff = jk::gateOff(rN1.rOut); gc3.vOff = jk::gateOff(rN2.rOut); gcL.vOff = jk::gateOff(rN3.rOut);
         if (!first && force) {}
         (void)force;
     }

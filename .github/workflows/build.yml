@@ -30,7 +30,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4 --target UnterholzUH20_All UnterholzUH20_CLAP
       - name: Tests
         run: |
-          cmake --build build --config Release --target uh20_tests
+          cmake --build build --config Release --target uh20_tests uh20_tests_reference
           ctest --test-dir build -C Release --output-on-failure
       - name: Sanity suite (blocking, touch, aliasing, stability, knobs, sample rates)
         if: runner.os == 'macOS'
@@ -38,6 +38,13 @@ jobs:
           cmake --build build --config Release --target uh20_cli
           python3 -m pip install --quiet --break-system-packages numpy scipy soundfile
           python3 tools/amp_sanity.py tests/sanity/uh20.json --quick --cli build/uh20_cli --json sanity.json
+      - name: Reference set (tone, loudness and aliasing against the reference engine's renders; touch and sweep)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --build build --config Release --target uh20_cli uh20_cli_ref
+          python3 -m pip install --quiet --break-system-packages numpy scipy soundfile pyloudnorm
+          python3 tools/reference_check.py --cli build/uh20_cli_ref --tight --no-sanity
+          python3 tools/reference_check.py --cli build/uh20_cli --ref-cli build/uh20_cli_ref --quick
       - name: Sample files (format, channels, loudness, true peak, holes, length)
         if: runner.os == 'macOS'
         run: |

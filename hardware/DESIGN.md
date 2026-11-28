@@ -18,6 +18,56 @@ The deliverable is a schematic of ordinary parts. The plugin (`source/dsp/UH20En
 - First results: cold clipper 0.3%, gain stage 0.7%, input stage 1.0% of swing.
 - Interstage dividers are the tube divider × the next stage's input scale × the previous stage's output scale.
 
+## The engine, solved with fewer operations (2026-11-28)
+
+The circuit is unchanged; the plug-in now solves it with about a third of the work. Every change is a different way of finding the
+same root of the same equations, so the output moves only by rounding: against the reference engine the waveform residual is
+-173 to -186 dB on the four DIs at 23 settings (`tools/reference_check.py --ref-cli`).
+
+- **J201 stages.** The drain load is linear (a network port, i = G vd - J), so the drain voltage follows from the drain current and each
+  stage is one equation in the current. It is solved by Newton with the model's own slope (`J201::idd`), from the current extrapolated
+  over the last three samples, inside a bracket. The general two-unknown Newton with a numerical Jacobian is the fallback.
+- **The long-tailed pair** is one equation in the tail voltage: each side's current is closed-form in saturation (the current is then
+  linear in its drain voltage), and the slope follows by the implicit function theorem.
+- **Stopping rules.** A step is final when the error it can leave, |f''| step^2 / 2|f'|, is below 1e-17 A (stages) or 1e-13 V (pair).
+  That only applies when the step cannot leave saturation. Otherwise the step must fall under 1e-10 A or 1e-7 V. The bypassed stages
+  are almost linear in their current, so they take one step.
+- **Gate clamps.** Below a forward bias worked out once per knob move (`jk::gateOff`) a gate draws less than the original test's
+  threshold, so the early-out returns the same answer without the junction's exponentials and power. A conducting gate is solved by
+  Newton with the junction's analytic slope, starting from its last conducting sample.
+- **Clip LEDs.** Newton on the diode drop, starting from the last sample's drop, instead of Lambert's W.
+- **Supply.** The rectified 60 Hz comes from a rotating phasor that is re-anchored to the exact phase every cycle, and divisions became
+  reciprocals.
+- **Host rate.** The internal rate stays at about 384 kHz: 8x at 44.1/48 kHz, 4x at 88.2/96 kHz, 2x at 176.4/192 kHz.
+
+`tests/uh20_tests.cpp` checks each analytic solver against the general one, sample after sample, over a hard noisy drive. The largest
+differences are 5e-10 V (stage), 1e-11 V (pair), 1e-10 V (gate) and 8e-14 V (LEDs).
+
+CPU, one Apple Silicon core, 20 s of the puzzle-remains lead DI at 48 kHz, 128-sample blocks: defaults 10.8% -> 3.4%, Drive 8 /
+Master 9 21.1% -> 6.8%. In the browser engine (WebAssembly in Node): 18.3% -> 3.9% and 33.5% -> 8.1%.
+
+**The reference engine.** `-DUH20_REFERENCE=1` (CMake targets `uh20_cli_ref`, `uh20_tests_reference`) builds the original general
+solvers at 8x at every host rate. Its output is byte-identical to v0.3.1. It rendered `tests/reference/reference.json`, and every
+faster engine is held to that set (`tools/reference_check.py`, in CI):
+- third-octave bands from 50 Hz to 8 kHz within 0.5 dB
+- loudness within 0.2 LU
+- aliasing of 880/1318 Hz tones at the hot corners within amp_sanity's limit and no more than 3 dB above the reference's
+- amp_sanity's touch and sweep checks at 0 FAIL
+
+**Goldens.** Bit-identity is no longer the test for the frozen v0.2/v0.3.0 goldens (Drive 0, Sag 0). They still match at -152 dB,
+which is the float32 floor of the stored files, and the -100 dB test is unchanged. "Identical to v0.2" now means identical to
+rounding, plus the reference check. The reference build reproduces v0.3.1 byte for byte. Statements below that a setting is
+"byte-identical to v0.3.0" were true when they were written. They now hold for the reference build, and to rounding for the plug-in.
+
+**Lower oversampling did not pass.** Tone and loudness pass easily at 4x (worst band 0.16 dB). Aliasing does not pass at 4x or 6x,
+and 7x is marginal:
+- 4x: Drive 10 at 1318 Hz rises 17 dB, to -53.5 dB.
+- 6x: Drive 10 rises 5-6 dB.
+- 7x: passes at the two gate tones (+2.9 dB at the all-gain-10 corner). On more tones it rises 3.6-4.6 dB at Drive 10 (1046,
+  1568 and 2093 Hz).
+
+So 44.1/48 kHz stays at 8x.
+
 ## v0.3.1: a Drive that cannot block, a Sag that compresses (2026-11-27)
 
 **What was wrong.** At Drive 10, v0.3.0 dropped out: on the puzzle-remains lead DI, 9% of the loud 10 ms frames (AMP output) fell more

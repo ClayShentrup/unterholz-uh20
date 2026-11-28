@@ -43,8 +43,21 @@ target_compile_definitions(uh20_screenshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_C
 target_link_libraries(uh20_screenshot PRIVATE juce::juce_audio_utils juce::juce_gui_basics PUBLIC juce::juce_recommended_config_flags)
 
 add_executable(uh20_cli tools/uh20_cli.cpp)
+# the reference engine: the same source built with UH20_REFERENCE=1 (8x oversampling and every original numerical path); it
+# renders tests/reference (tools/reference_check.py), which every faster engine is held to
+add_executable(uh20_cli_ref tools/uh20_cli.cpp)
+target_compile_definitions(uh20_cli_ref PRIVATE UH20_REFERENCE=1)
+add_executable(uh20_bench tools/uh20_bench.cpp)
+add_executable(uh20_bench_ref tools/uh20_bench.cpp)
+target_compile_definitions(uh20_bench_ref PRIVATE UH20_REFERENCE=1)
+add_executable(uh20_prof tools/uh20_prof.cpp)
+target_compile_definitions(uh20_prof PRIVATE UH20_PROFILE=1)
 
 # tests: tests/uh20_tests.cpp (run with ctest, or uh20_tests --update to rewrite the goldens on purpose)
 enable_testing()
 add_executable(uh20_tests tests/uh20_tests.cpp)
 add_test(NAME uh20_tests COMMAND uh20_tests)
+# the same tests on the reference engine (UH20_REFERENCE=1): it stays buildable, and still renders the frozen goldens exactly
+add_executable(uh20_tests_reference tests/uh20_tests.cpp)
+target_compile_definitions(uh20_tests_reference PRIVATE UH20_REFERENCE=1)
+add_test(NAME uh20_tests_reference COMMAND uh20_tests_reference)
