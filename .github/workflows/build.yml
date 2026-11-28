@@ -53,6 +53,29 @@ jobs:
           python3 tools/check_samples.py docs
           cmake --build build --config Release --target uh20_cli
           python3 tools/render_samples.py --check-labels
+      - name: Browser engine (the committed WebAssembly matches the source and the native renderer)
+        if: runner.os == 'macOS'
+        run: |
+          tools/build_web.sh --check
+          cmake --build build --config Release --target uh20_cli
+          # the same renderer without fused multiply-add, which WebAssembly lacks: the strict check (see tools/web_parity.mjs)
+          c++ -O3 -DNDEBUG -std=c++20 -ffp-contract=off tools/uh20_cli.cpp -o build/uh20_cli_nofma
+          ffmpeg -loglevel error -y -i docs/play/recordings/the-puzzle-remains-lead.opus -t 30 -c:a pcm_f32le parity_in.wav
+          node tools/web_parity.mjs --cli build/uh20_cli --wasm docs/play/uh20.wasm --in parity_in.wav
+          node tools/web_parity.mjs --cli build/uh20_cli_nofma --wasm docs/play/uh20.wasm --in parity_in.wav --limit -140
+      - name: Browser player's audio thread (knob changes reach the engine within 100 ms, even on a busy device)
+        if: runner.os == 'macOS'
+        run: node tools/worklet_test.mjs --wasm docs/play/uh20.wasm
+      - uses: mymindstorm/setup-emsdk@v14
+        if: runner.os == 'macOS'
+        with:
+          version: 7.0.1
+      - name: Browser engine (a fresh build from the source matches the native renderer too)
+        if: runner.os == 'macOS'
+        run: |
+          OUT=fresh.wasm tools/build_web.sh
+          node tools/web_parity.mjs --cli build/uh20_cli_nofma --wasm fresh.wasm --in parity_in.wav --limit -140
+          if cmp -s fresh.wasm docs/play/uh20.wasm; then echo "fresh build is byte-identical to docs/play/uh20.wasm"; else echo "fresh build differs in bytes from docs/play/uh20.wasm (another compiler build); both pass parity"; fi
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |

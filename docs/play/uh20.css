@@ -1,0 +1,118 @@
+/* The UH-20's face for the shared browser player (player/player.css): the plug-in's flat light panel
+   (source/PluginEditor.cpp), a black band with the letter-spaced wordmark, flat black knobs with ticks and a white
+   pointer (orange on CLIP and DURCHHANG), German names in bold with the English under them, outlined switches that fill
+   orange when on, and the hover help in a black strip along the bottom. Applies to a player root with class "uh20",
+   once docs/play/amp.js decorate() has added what the shared player doesn't draw.
+   SPDX-License-Identifier: AGPL-3.0-or-later */
+.amp-player.uh20{--panel:#dbd9cf;--band:#141414;--paper:#f2efe6;--rule:#b3b0a6;--grey:#666661;--grey2:#8c8c85;--or:#e05c1f;
+  color-scheme:light;color:var(--ink);font:15px/1.55 "Helvetica Neue",Helvetica,Arial,sans-serif}
+.amp-player.uh20:not(.decorated) .panel{visibility:hidden}
+
+/* the panel */
+.amp-player.uh20 .panel{background:var(--panel)!important;border:1px solid var(--rule);border-radius:0;box-shadow:none;padding:0 0 0;overflow:hidden}
+.amp-player.uh20 .panel::before{display:none}
+.amp-player.uh20 .phead{background:var(--band);padding:14px 22px 14px 26px;min-height:56px;gap:24px;border:0;flex-wrap:nowrap}
+.amp-player.uh20 .mark{flex:1;min-width:0}
+.amp-player.uh20 .word{font:700 30px/1 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.3em;text-transform:uppercase;color:var(--paper);white-space:nowrap}
+.amp-player.uh20 .side{display:flex;flex-direction:column;gap:5px;min-width:0}
+.amp-player.uh20 .tag{font:700 12px/1.2 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.02em;color:#cccac0;white-space:pre}
+.amp-player.uh20 .cap.draft{font:400 11px/1.2 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.02em;color:var(--grey2);text-transform:none;white-space:nowrap}
+.amp-player.uh20 .jewel{width:10px;height:28px;border-radius:0;background:var(--or);box-shadow:none;outline:0;margin:0 0 0 8px}
+
+/* the knobs, in their three sections between two rules */
+.amp-player.uh20 .rows{margin:18px 20px 0;padding:10px 0 12px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.amp-player.uh20 .row{column-gap:0}
+.amp-player.uh20 .group{align-items:stretch;padding:0 14px}
+.amp-player.uh20 .group h3{margin:0 0 6px 4px;font:400 11px/1.4 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:none;color:var(--grey);text-align:left}
+.amp-player.uh20 .knobs{gap:10px}
+.amp-player.uh20 .knob{width:82px}
+.amp-player.uh20 .knob-value{order:-1;margin:0 0 -2px;font:700 12px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--ink)}
+.amp-player.uh20 .knob-face{cursor:ns-resize}
+.amp-player.uh20 .knob-label{margin-top:4px;font:700 12px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:0;color:var(--ink)}
+.amp-player.uh20 .knob-sub{font-size:11px;line-height:1.3;color:var(--mute);white-space:nowrap}
+.amp-player.uh20 .k-track,.amp-player.uh20 .k-glow,.amp-player.uh20 .k-arc,.amp-player.uh20 .k-shadow,.amp-player.uh20 .k-knurl,.amp-player.uh20 .k-rim,.amp-player.uh20 .k-shine{display:none}
+.amp-player.uh20 .knob-svg circle[fill^="url"]{fill:var(--ink)}
+.amp-player.uh20 .k-ticks{fill:none;stroke:#595955;stroke-width:1.1}
+.amp-player.uh20 .k-ring{fill:none;stroke:#383836;stroke-width:1.1}
+.amp-player.uh20 .k-ptr{stroke:#f5f2eb;stroke-width:3.3;stroke-linecap:butt}
+.amp-player.uh20 .knob.accent .k-ptr{stroke:var(--or)}
+.amp-player.uh20 .knob.active .k-ring,.amp-player.uh20 .knob-face:focus-visible .k-ring{stroke:#6b6b66}
+
+/* the switches under the knobs: HELL TIEF, then REC AMP */
+.amp-player.uh20 .sw.switches{display:flex;flex-wrap:wrap;gap:12px 2px;margin:14px 26px 0;align-items:flex-start}
+.amp-player.uh20 .toggle{flex-direction:column;align-items:stretch;gap:3px;min-width:0;width:62px;height:auto;padding:0;border:0;background:transparent;color:var(--ink);font:700 12px/1 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:0;text-transform:none}
+.amp-player.uh20 .toggle .dot{display:none}
+.amp-player.uh20 .toggle .t{display:flex;align-items:center;justify-content:center;height:22px;border:1px solid var(--ink)}
+.amp-player.uh20 .toggle.on .t{background:var(--or);color:#f7f5ee;box-shadow:inset 0 0 0 1px var(--panel)}
+.amp-player.uh20 .toggle:hover .t{background-color:rgba(26,26,26,.06)}
+.amp-player.uh20 .toggle.on:hover .t{background-color:var(--or)}
+.amp-player.uh20 .toggle .sub{font:400 11px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--mute);text-align:center;white-space:nowrap}
+.amp-player.uh20 .toggle.rec{margin-left:28px}
+.amp-player.uh20 .toggle:focus-visible{outline:2px solid var(--or);outline-offset:2px}
+
+/* the help strip */
+.amp-player.uh20 .pfoot{margin:16px 0 0;padding:0 20px 0 26px;min-height:42px;background:var(--band);border:0}
+.amp-player.uh20 .help{position:relative;font-size:12px;line-height:1.4;color:var(--grey2);padding:6px 0}
+.amp-player.uh20 .help.on{color:var(--paper)}
+.amp-player.uh20 .help.on::before{content:"";position:absolute;left:-14px;top:50%;width:6px;height:14px;margin-top:-7px;background:var(--or)}
+
+/* the deck under the panel: flat, outlined, in the panel's type */
+.amp-player.uh20 .deck{margin-top:18px}
+.amp-player.uh20 .card{background:transparent;border:1px solid var(--rule);border-radius:0}
+.amp-player.uh20 .card h2{font:700 12px/1 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.2em;color:var(--ink)}
+.amp-player.uh20 .card h2::after{background:var(--rule)}
+.amp-player.uh20 .btn{font:700 12px/1 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.08em;border:1px solid var(--ink);border-radius:0;color:var(--ink)}
+.amp-player.uh20 .btn:hover{background:rgba(26,26,26,.06)}
+.amp-player.uh20 .btn.main{background:var(--or);border-color:var(--or);color:#fff}
+.amp-player.uh20 .btn.main:hover{background:#c94f17}
+.amp-player.uh20 .btn[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+.amp-player.uh20 .btn.busy{color:#fff}
+.amp-player.uh20 .btn.busy::before{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+.amp-player.uh20 .btn:focus-visible,.amp-player.uh20 select:focus-visible,.amp-player.uh20 input:focus-visible,.amp-player.uh20 .knob-face:focus-visible{outline:2px solid var(--or);outline-offset:2px}
+.amp-player.uh20 .tabs{border-color:var(--ink);border-radius:0}
+.amp-player.uh20 .tabs button{font:700 11px/1 "Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--mute)}
+.amp-player.uh20 .tabs button[aria-selected=true]{color:var(--paper);background:var(--ink)}
+.amp-player.uh20 .line > label,.amp-player.uh20 .lbl{font:700 11px/1.2 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.1em;color:var(--grey)}
+.amp-player.uh20 select{background:#e6e4db;color:var(--ink);border:1px solid var(--ink);border-radius:0}
+.amp-player.uh20 input[type=range]{accent-color:var(--or)}
+.amp-player.uh20 .desc{color:#3a3a37}
+.amp-player.uh20 .note{color:#55554f}
+.amp-player.uh20 .time,.amp-player.uh20 .readout,.amp-player.uh20 .status,.amp-player.uh20 .stats{color:#55554f}
+.amp-player.uh20 .status.err{color:#a8300c}
+.amp-player.uh20 .warn{border-color:#a8300c;background:rgba(224,92,31,.1);color:#7a2208}
+.amp-player.uh20 .meter{background:#cfccc1;border-color:var(--rule);border-radius:0}
+.amp-player.uh20 .meter i{background:linear-gradient(90deg,#3a3a37,var(--ink) 80%,var(--or))}
+.amp-player.uh20 .meter.hot i{background:linear-gradient(90deg,#3a3a37,var(--or) 70%,#c2200a)}
+.amp-player.uh20 .meter b{background:var(--or)}
+.amp-player.uh20 .loadbar,.amp-player.uh20 .bufbar{background:rgba(26,26,26,.1);border-radius:0}
+.amp-player.uh20 .loadbar i{background:var(--or)}
+.amp-player.uh20 .bufbar i{background:rgba(224,92,31,.6)}
+
+/* the three sections side by side, with the plug-in's dividers; narrower, they wrap and the dividers go */
+@media (min-width:1061px){
+  .amp-player.uh20 .group + .group{border-left:1px solid var(--rule)}
+  .amp-player.uh20 .group:first-child{padding-left:0}
+  .amp-player.uh20 .group.end{justify-self:stretch}
+  .amp-player.uh20 .row{justify-content:start}
+}
+@media (max-width:1060px){
+  .amp-player.uh20 .row{column-gap:8px}
+  .amp-player.uh20 .group{padding:0 4px}
+}
+@media (max-width:700px){
+  .amp-player.uh20 .phead{flex-wrap:wrap;row-gap:10px;padding:14px 16px}
+  .amp-player.uh20 .mark{flex-basis:100%}
+  .amp-player.uh20 .word{font-size:24px;letter-spacing:.24em}
+  .amp-player.uh20 .side{flex:1}
+  .amp-player.uh20 .jewel{align-self:center}
+}
+@media (max-width:560px){
+  .amp-player.uh20 .panel{padding:0}
+  .amp-player.uh20 .phead{gap:10px}
+  .amp-player.uh20 .rows{margin:14px 10px 0}
+  .amp-player.uh20 .knobs{gap:6px 2px}
+  .amp-player.uh20 .knob{width:74px}
+  .amp-player.uh20 .sw.switches{margin:14px 12px 0}
+  .amp-player.uh20 .toggle.rec{margin-left:16px}
+  .amp-player.uh20 .pfoot{padding:0 12px 0 24px;align-items:stretch}
+}

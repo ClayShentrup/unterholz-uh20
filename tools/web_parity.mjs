@@ -6,6 +6,12 @@
 // The native renderer reads and writes raw mono float32; the amp is mono, so the WebAssembly engine's two sides must
 // also be identical to each other. --bench also reports the realtime
 // CPU fraction of the WebAssembly engine (seconds of processing per second of audio, one core, 128-sample blocks).
+// Two renderers, two limits (CI runs both). Against the shipping build (-100 dB): on arm64 the compiler fuses a*b+c into
+// one rounding (fused multiply-add), which WebAssembly cannot, and with every knob up the circuit's gain carries those
+// last-bit differences to about -103 dB re peak (two arm64 builds, with and without fusing, differ by -133 dB at that
+// setting: the size depends on which roundings differ, not on anything the browser build gets wrong). Against
+// the same source built with -ffp-contract=off (--limit -140): the WebAssembly engine computes what the native code does,
+// so only the float output's rounding is left (about -150 dB re peak, nearly every sample identical).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';

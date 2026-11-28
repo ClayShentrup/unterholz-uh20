@@ -50,8 +50,11 @@ export const amp = {
       help: 'AMP: no cabinet. For a real amp and speaker, or your own cabinet impulse response after the plugin.',
       helpRec: 'REC: the analog cab-sim output (the hardware\'s REC jack). For recording straight into a DAW.' },
     { key: 'involts', cli: 'involts', label: 'input volts', kind: 'input', min: 0.1, max: 4, step: 0.01, def: 1.6 },
-    // Output trim: a plug-in parameter with no knob on its panel (the monitor's Volume does that job here)
-    { key: 'trim', cli: 'trim', label: 'trim', kind: 'input', min: -24, max: 24, step: 0.1, def: 0 },
+    // Output trim: a plug-in parameter with no knob on its panel (the monitor's Volume does that job here). The plug-in's
+    // output runs hot (the built-in lead peaks at +5 dBFS at the defaults and +11 at ANTRIEB 8), which a DAW's floating-point
+    // mix takes but a browser's output clips, so the player sits 14 dB lower: peaks stay under 0 dBFS at every setting, and
+    // the level is about the other amps' players'. It changes only the level, not the tone.
+    { key: 'trim', cli: 'trim', label: 'trim', kind: 'input', min: -24, max: 24, step: 0.1, def: -14 },
   ],
 
   // the plug-in's panel: one row of knobs in its three sections (the switches sit under them)
@@ -75,6 +78,8 @@ export const amp = {
 // orange pointers, the switches under the knobs, and the Output choice as its REC / AMP pair.
 export function decorate(root, player) {
   const P = amp.params;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svgEl = (name, attrs) => { const e = document.createElementNS(NS, name); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
   for (const face of root.querySelectorAll('.knob-face')) {
     const p = P.find(q => q.label === face.getAttribute('aria-label'));
     if (!p) continue;
@@ -83,6 +88,27 @@ export function decorate(root, player) {
     if (p.accent) k.classList.add('accent');
     const sub = document.createElement('div'); sub.className = 'knob-sub'; sub.textContent = p.sub;
     k.querySelector('.knob-label').after(sub);
+    // the plug-in's knob (source/PluginEditor.cpp, KnobLook): eleven ticks round a flat black cap, and a ring inside it.
+    // Its cap is 27 px in radius; the shared knob's is 30, so its 5-9 px ticks and 6 px ring inset scale by 30 / 27.
+    const svg = face.querySelector('svg'), ptr = svg && svg.querySelector('.k-ptr');
+    if (!ptr) continue;
+    const c = svg.viewBox.baseVal.width / 2, r = 30, s = r / 27;
+    let d = '';
+    for (let t = 0; t <= 10; t++) {
+      const a = (-135 + 27 * t) * Math.PI / 180, x = Math.sin(a), y = -Math.cos(a);
+      d += `M${(c + x * (r + 5 * s)).toFixed(2)} ${(c + y * (r + 5 * s)).toFixed(2)}L${(c + x * (r + 9 * s)).toFixed(2)} ${(c + y * (r + 9 * s)).toFixed(2)}`;
+    }
+    svg.insertBefore(svgEl('path', { d, class: 'k-ticks' }), svg.firstChild);
+    svg.insertBefore(svgEl('circle', { cx: c, cy: c, r: (r - 6 * s).toFixed(2), class: 'k-ring' }), ptr);
+  }
+  // the header band: the wordmark on the left, the model line and the draft line on the right, the orange bar at the end
+  const head = root.querySelector('.phead'), mark = root.querySelector('.phead .mark'), cap = root.querySelector('.pfoot .cap'), jewel = root.querySelector('.phead .jewel');
+  if (head && mark) {
+    const side = document.createElement('div'); side.className = 'side';
+    const tag = mark.querySelector('.tag'); if (tag) side.append(tag);
+    if (cap) { cap.classList.add('draft'); side.append(cap); }
+    head.append(side);
+    if (jewel) head.append(jewel);
   }
   const sw = root.querySelector('.phead .sw'), rows = root.querySelector('.rows');
   if (sw && rows) { sw.classList.add('switches'); rows.after(sw); }
@@ -114,4 +140,5 @@ export function decorate(root, player) {
     for (const ev of ['pointerleave', 'blur']) el.addEventListener(ev, () => help.classList.remove('on'));
   // no presets in the plug-in: no preset menu
   if (!(amp.presets || []).length) { const ps = root.querySelector('select[aria-label="Preset"]'); if (ps) ps.classList.add('hide'); }
+  root.classList.add('decorated');
 }

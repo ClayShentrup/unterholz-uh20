@@ -1,8 +1,11 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Unterholz UH-20</title>
+<link rel="stylesheet" href="play/player/player.css"><link rel="stylesheet" href="play/uh20.css">
+<link rel="modulepreload" href="play/amp.js"><link rel="modulepreload" href="play/player/player.js">
 <style>
 :root{--bg:#dbd9cf;--ink:#1a1a1a;--band:#141414;--or:#e05c1f;--mut:#6b6b66}
+html,body{overflow-x:hidden}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Helvetica Neue",Helvetica,Arial,sans-serif}
 header{background:var(--band);color:#f2efe6;padding:28px 16px}
 header h1{margin:0;letter-spacing:.35em;font-size:32px}
@@ -16,19 +19,28 @@ ol.smp{list-style:none;padding:0;margin:0}ol.smp li{display:flex;gap:14px;border
 ol.smp .n{font-weight:700;color:var(--or);min-width:2ch}ol.smp .t{flex:1;min-width:0}ol.smp span{color:var(--mut)}
 audio{display:block;width:100%;margin-top:8px}h2{letter-spacing:.2em;font-size:16px;margin:36px 0 6px}label{color:var(--mut);font-size:14px}
 pre{background:rgba(127,127,127,.12);padding:10px 14px;overflow-x:auto}
+/* the player is wider than the text column: it takes the window's width, up to a little more than the plug-in panel's */
+#player{width:min(1000px,calc(100vw - 32px));margin-left:calc(50% - min(500px,50vw - 16px))}
+#play .lead{max-width:760px}
+a.btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 dl.kn{margin:0}dl.kn dt{border-top:1px solid #b3b0a6;padding-top:10px;margin-top:10px}dl.kn dd{margin:2px 0 0}
 </style></head><body>
 <header><h1>UNTERHOLZ</h1><p>UH-20 &nbsp; JFET-VORVERST&Auml;RKER &nbsp;/&nbsp; OPEN HARDWARE</p></header>
 <main>
-<img src="screenshot.png" alt="The UH-20 plugin panel">
 <p>A JFET guitar amp published as an open circuit, with a plugin that simulates that circuit part by part. One amp, one character: a glassy, studio-preamp-style clean tone, and one knob, ANTRIEB (drive), that switches in another J201 stage and takes the same amp through edge of breakup and crunch to a saturated, singing lead. It drives a class AB power section (a J201 long-tailed pair into an LM3886) whose feedback carries Presence and whose pair&#x27;s tail current Sag takes away as you dig in.</p>
-<a class="btn" href="https://github.com/ClayShentrup/unterholz-uh20/releases/latest">Download (VST3 / AU / CLAP / app)</a>
+<a class="btn" href="#play">Play it in your browser</a><a class="btn ghost" href="https://github.com/ClayShentrup/unterholz-uh20/releases/latest">Download (VST3 / AU / CLAP / app)</a>
 <p>On a Mac with <a href="https://brew.sh">Homebrew</a>:</p>
 <pre><code>brew tap clayshentrup/tap
 brew trust clayshentrup/tap
 brew install --cask unterholz-uh20</code></pre>
 <p>The installer package asks for your Mac password.</p>
 <a class="btn" href="https://github.com/ClayShentrup/unterholz-uh20">Source and schematics</a>
+
+<section id="play"><h2>PLAY IT</h2>
+<p class="lead">This is the amp itself, not a recording of it: the same circuit simulation as the plugin, compiled to WebAssembly and running in your browser, so every knob does exactly what it does in the plugin (the test suite holds the two to each other sample for sample). Pick a dry guitar recording and press Play, or choose your own guitar through an audio interface (headphones, please). Drag a knob up or right to turn it up, double-click it to reset; it works from the keyboard too. The settings stay in the address, so a sound can be shared as a link.</p>
+<div id="player" class="uh20"></div>
+<noscript><p>The player needs JavaScript and a browser with Web Audio and WebAssembly. The samples below play anywhere.</p><img src="screenshot.png" alt="The UH-20 plugin panel"></noscript>
+</section>
 
 <section id="knobs"><h2>THE KNOBS</h2>
 <p class="mut">Each control: what it does to the sound, then (in grey) what it is in the circuit. Point at any control in the plugin for the same help.</p>
@@ -81,7 +93,23 @@ brew install --cask unterholz-uh20</code></pre>
 <li><div class="n">25</div><div class="t"><b>Bright clean</b> <span>volume 4, treble 7, middle 3, bass 5, presence 7, master 6.5, bright</span><audio controls preload="none" src="samples/25%20Bright%20clean%20-%20volume%204%2C%20treble%207%2C%20middle%203%2C%20bass%205%2C%20presence%207%2C%20master%206.5%2C%20bright.opus"></audio></div></li>
 <li><div class="n">26</div><div class="t"><b>Mid lead</b> <span>drive 8, volume 5, treble 3, middle 9, bass 3, presence 5, master 7, sag 4</span><audio controls preload="none" src="samples/26%20Mid%20lead%20-%20drive%208%2C%20volume%205%2C%20treble%203%2C%20middle%209%2C%20bass%203%2C%20presence%205%2C%20master%207%2C%20sag%204.opus"></audio></div></li>
 </ol></section>
+<script type="module">
+// the player (docs/play/player, shared with the other amps; this amp's knobs and look in docs/play/amp.js and
+// docs/play/uh20.css). The engine and the recordings download only when the player scrolls into view (after the page has
+// loaded) or on the first Play.
+import { amp, decorate } from './play/amp.js';
+import { mountPlayer } from './play/player/player.js';
+const el = document.getElementById('player');
+mountPlayer(el, amp, { base: 'play/', lazy: true, anchor: 'play' }).then(p => {
+  try { decorate(el, p); } finally { el.classList.add('decorated'); }
+  if (/^#play&/.test(location.hash)) document.getElementById('play').scrollIntoView();   // a shared sound: #play&volume=7&...
+  const watch = () => { const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { p.warm(); io.disconnect(); } }, { threshold: 0.2 }); io.observe(el); };
+  if (document.readyState === 'complete') watch(); else addEventListener('load', watch, { once: true });
+}).catch(e => { el.classList.add('decorated'); const m = document.createElement('p'); m.textContent = 'The player could not start: ' + (e && e.message || e); el.append(m); });
+</script>
 <script>
+// one sound at a time: a sample pauses the others and the player
+document.addEventListener('play', e => { if (window.ampPlayer && window.ampPlayer.state.playing) window.ampPlayer.pause(); }, true);
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
 document.addEventListener('ended', e => { const all = [...document.querySelectorAll('audio')]; const i = all.indexOf(e.target); if (i >= 0 && i + 1 < all.length && document.getElementById('cont') && document.getElementById('cont').checked) all[i + 1].play(); }, true);
 </script>

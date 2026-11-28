@@ -4,6 +4,8 @@
 
 **A JFET guitar amp, published as an open circuit and as a plugin that simulates that circuit.**
 
+**[Play it in your browser](https://clayshentrup.github.io/unterholz-uh20/#play)** · **[Listen to samples](https://clayshentrup.github.io/unterholz-uh20/#samples)** · **[Download](https://github.com/ClayShentrup/unterholz-uh20/releases/latest)**
+
 The UH-20 is one amp with one character. At its reference settings it is a studio-preamp-style clean tone: glassy, with a sweet second harmonic that grows smoothly as you dig in. One knob, **ANTRIEB** (drive), switches in another J201 gain stage ahead of the tone stack and takes the same amp from edge of breakup through crunch to a saturated, singing lead.
 
 The preamp feeds a class AB power section: a J201 long-tailed pair driving an LM3886, with global feedback (Presence lives in that feedback network) and Sag, a transconductor that takes tail current from the pair as the speaker current rises, so hard playing pulls the power section's ceiling down. The output is either an analog cab simulation (REC) or the bare amp (AMP).
@@ -32,6 +34,16 @@ The installer package asks for your Mac password.
 The macOS builds are not notarized yet; `INSTALL.txt` in the download explains the one-time step.
 
 [`jsfx/Unterholz UH-20.jsfx`](jsfx/) is the earlier v0.1 model for REAPER (two channels, behavioural gain stages and power stage, with the exact LED solve). The plugin is the circuit simulation and the reference.
+
+## Play it in your browser
+
+**[clayshentrup.github.io/unterholz-uh20/#play](https://clayshentrup.github.io/unterholz-uh20/#play)**, on the main page: the amp itself, not a recording of it. The engine ([`source/dsp`](source/dsp)) is compiled to WebAssembly unchanged and runs in an AudioWorklet, so the panel's knobs and switches (names, ranges and defaults as in the plugin) change the sound live. The input is a dry guitar recording from the picker or your own guitar through an audio interface (headphones, please). The knob settings live in the address, so a sound can be shared as a link.
+
+- **Build.** `tools/build_web.sh` compiles [`web/uh20_web.cpp`](web/uh20_web.cpp) (the C API: `amp_create(sampleRate)`, `amp_set_param(amp, id, value)`, `amp_process(amp, in, outL, outR, n)`, plus `amp_snapshot` / `amp_restore` for buffered playback) with Emscripten at -O3, no fast-math, into `docs/play/uh20.wasm`, and records a hash of the sources in `docs/play/build.json`; CI checks it.
+- **Parity.** `node tools/web_parity.mjs --in guitar.wav` renders seven settings ([`web/parity.json`](web/parity.json)) through the WebAssembly engine and through `uh20_cli`. Against the same source built with `-ffp-contract=off` (`--limit -140`) they agree to the float output's rounding, about -146 dB relative to the peak or better. Against the shipping arm64 build the limit is -100 dB: there the compiler fuses multiply-adds, which WebAssembly can't, and with every knob at 10 the circuit's gain carries those last-bit differences to about -103 dB. CI runs both.
+- **The audio thread and buffered playback.** `node tools/worklet_test.mjs` runs the player's AudioWorklet in Node with a simulated clock: knob changes reach the engine within 100 ms at up to 95% load, and buffered playback (for devices too slow for real time: the engine renders ahead in a Web Worker and a knob change re-renders from the playhead) matches real time sample for sample. CI runs it.
+- **Level.** The plugin's output runs hot (peaks above 0 dBFS at the defaults, which a DAW takes and a browser clips), so the player sets the plugin's output trim to -14 dB. That changes only the level.
+- **The panel.** The player in [`docs/play/player/`](docs/play/player) is shared with the other amps; this amp's parameters, labels and the panel details it doesn't draw (English names under the German ones, the REC / AMP pair, the orange pointers) are in [`docs/play/amp.js`](docs/play/amp.js), and the plugin's flat light look is [`docs/play/uh20.css`](docs/play/uh20.css). The old `/play/` address redirects to the main page with its settings.
 
 ## Samples
 
