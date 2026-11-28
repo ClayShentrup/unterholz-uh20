@@ -1,5 +1,6 @@
 """Render docs/samples from docs/samples/permutations.txt: the puzzle-remains lead DI (not in the repo; pass its path or keep it at
-~/rindu/samples/src/puzzle_lead_cut.wav) through uh20_cli, light compression, -18 LUFS, then Opus (128 kbps VBR, mono) encoded
+~/rindu/samples/src/puzzle_lead_cut.wav) through uh20_cli, light compression, -18 LUFS, then Opus (128 kbps VBR, two identical channels like the other amps' samples; some players handle mono Ogg Opus
+unreliably) encoded
 straight from the float WAV. Needs numpy, soundfile, pyloudnorm and ffmpeg with libopus.
 Usage: render_samples.py [DI.wav] [--only 06,07,...]  (--only: just the samples whose numbers are listed)"""
 import numpy as np, soundfile as sf, pyloudnorm as pl, subprocess, os, sys, tempfile
@@ -24,6 +25,7 @@ for line in open(f"{R}/docs/samples/permutations.txt"):
     y = np.fromfile(f"{T}/out.f32", dtype=np.float32).astype(np.float64)
     y = y / (np.abs(y).max() + 1e-12) * 0.5
     y = comp(y, sr, 10 * np.log10(np.mean(y ** 2)) + 6)
+    y = np.stack([y, y], 1)                                   # two identical channels, measured as stereo like the other amps
     y *= 10 ** ((-18 - pl.Meter(sr).integrated_loudness(y)) / 20)
     if np.abs(y).max() > 0.89: y *= 0.89 / np.abs(y).max()
     sf.write(f"{T}/u.wav", y.astype(np.float32), sr, subtype="FLOAT")
