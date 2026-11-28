@@ -18,6 +18,10 @@ What each check catches (all were real bugs in these amps):
   continuity   every knob in half steps: sudden level jumps (switch thresholds, taper bugs)
   alive        every knob 0 vs 10 changes the sound (dead or miswired knobs)
   rates        44.1 / 48 / 96 kHz give the same level and spectrum (sample-rate-dependent filters or solvers)
+  channels     each output channel measured on its own, at the hot corners with every effect (fx_knobs) at several
+               levels: no channel may drop out against the same setting without effects, and the two channels may not
+               differ by more than 20 dB while playing (a one-channel collapse hides in a mono sum). Effects listed in
+               fx_dynamic (a volume swell) change the level on purpose and are only covered by the stability check
 """
 import json, os, subprocess, sys, tempfile, time, argparse
 import numpy as np
@@ -97,7 +101,7 @@ class Amp:
         k = dict(self.s.get("fixed", {})); k.update(self.s["base"]); k.update(knobs)
         k.update(self.s["cab_on"] if cab else self.s["cab_off"])
         return [f"{a}={b}" for a, b in k.items()]
-    def render(self, x, knobs, cab=True, sr=SR, tail=0.0):
+    def render(self, x, knobs, cab=True, sr=SR, tail=0.0, keep_channels=False):
         x = np.concatenate([x, np.zeros(int(tail * sr))]).astype(np.float32)
         self.n += 1; i = f"{self.tmp}/{os.getpid()}_{self.n}_{np.random.randint(1e9)}"
         if self.s["io"] == "f32":
@@ -108,10 +112,14 @@ class Amp:
             import soundfile as sf
             sf.write(i + ".in.wav", x, sr, subtype="FLOAT")
             subprocess.run([self.cli, i + ".in.wav", i + ".out.wav"] + self.args(knobs, cab), check=True, capture_output=True)
-            y, _ = sf.read(i + ".out.wav"); y = y if y.ndim == 1 else y.mean(1)
+            y, _ = sf.read(i + ".out.wav")
+            if y.ndim == 2 and keep_channels: y = y
+            else: y = y if y.ndim == 1 else y.mean(1)
         for f in os.listdir(self.tmp):
             if f.startswith(os.path.basename(i)): os.remove(os.path.join(self.tmp, f))
-        return y[:len(x)] if len(y) >= len(x) else np.concatenate([y, np.zeros(len(x) - len(y))])
+        if y.ndim == 1 and keep_channels: y = np.stack([y, y], 1)
+        if len(y) >= len(x): return y[:len(x)]
+        return np.concatenate([y, np.zeros((len(x) - len(y),) + y.shape[1:])])
 
 # ---------------------------------------------------------------- measurements
 FL = 480
@@ -139,7 +147,7 @@ class Report:
 # ---------------------------------------------------------------- the checks
 def t_stability(amp, R, pool, quick):
     print("stability: silence, tails, DC, NaN at corners and random settings")
-    ks = amp.s["knobs"]; rng = np.random.default_rng(7)
+    ks = amp.s["knobs"] + amp.s.get("fx_knobs", []); rng = np.random.default_rng(7)
     cases = [("all 0", {k: 0 for k in ks}), ("all 10", {k: 10 for k in ks}), ("all 5", {k: 5 for k in ks}),
              ("base", {})] + [(f"random {i}", {k: round(float(rng.uniform(0, 10)), 1) for k in ks}) for i in range(4 if quick else 12)]
     burst = np.concatenate([pluck(110, 1.0, .5, np.random.default_rng(3)), np.zeros(int(0.2 * SR))])
@@ -152,7 +160,8 @@ def t_stability(amp, R, pool, quick):
         finite = np.all(np.isfinite(z)) and np.all(np.isfinite(y))
         sil = db(np.mean(z[SR:] ** 2)) if finite else 0; tail = db(np.mean(y[-SR // 2:] ** 2)) if finite else 0
         dc = 20 * np.log10(abs(y[int(0.2 * SR):].mean()) + 1e-12) if finite else 0
-        ok = finite and sil < LIMITS["silence_dbfs"] and tail < LIMITS["tail_dbfs"] and dc < LIMITS["dc_dbfs"]
+        fx_on = any(kn.get(f, amp.s.get("base", {}).get(f, 0)) >= 0.05 for f in amp.s.get("fx_knobs", []))   # echoes and reverbs ring on by design
+        ok = finite and sil < LIMITS["silence_dbfs"] and (fx_on or tail < LIMITS["tail_dbfs"]) and dc < LIMITS["dc_dbfs"]
         R.check("stability", name, ok, f"finite {finite}, silence {sil:.0f} dBFS, tail {tail:.0f} dBFS, DC {dc:.0f} dBFS"
                 + ("" if ok or name.startswith("all") or name == "base" else f"  [{kn}]"))
 
@@ -252,9 +261,32 @@ def t_rates(amp, R, pool, quick, di):
         ok = all(out[s][0] for s in out) and dl < LIMITS["rate_level_db"] and dbd < LIMITS["rate_band_db"]
         R.check("rates", n, ok, f"level spread {dl:.2f} dB, worst band {dbd:.1f} dB")
 
+def t_channels(amp, R, pool, quick, di):
+    print("channels: each output channel on its own, with the effects in and out (a collapse in one channel hides in a mono sum)")
+    fx = [f for f in amp.s.get("fx_knobs", []) if f not in amp.s.get("fx_dynamic", [])]   # fx_dynamic (e.g. a swell) shape the level by design
+    ex = env_db(di); act = ex > ex.max() - 30
+    cases = [(n, k) for n, k in hot_corners(amp)]
+    levels = [3, 6, 10] if not quick else [5, 10]
+    jobs = [(n, dict(k), None, 0) for n, k in cases] + [(n, dict(k, **{f: v}), f, v) for n, k in cases for f in fx for v in levels]
+    res = list(pool.map(lambda j: (j, amp.render(di, j[1], keep_channels=True)), jobs))
+    ref = {j[0]: y for j, y in res if j[2] is None}
+    for (n, kn, f, v), y in res:
+        bad = []
+        for c in range(y.shape[1]):
+            e = env_db(y[:, c]); er = env_db(ref[n][:, c]); m = min(len(e), len(er), len(act))
+            loud = act[:m] & (er[:m] > er[:m].max() - 30)
+            drop = (e[:m] - er[:m])[loud] < -12
+            if drop.mean() > LIMITS["dropout_frac"]: bad.append(f"channel {c + 1} drops out on {drop.mean() * 100:.1f}% of the playing")
+        if y.shape[1] == 2:
+            el, er2 = env_db(y[:, 0]), env_db(y[:, 1]); m = min(len(el), len(act)); loud = act[:m]
+            gap = np.abs(el[:m] - er2[:m])[loud]
+            if np.mean(gap > 20) > LIMITS["dropout_frac"]: bad.append(f"channels differ by over 20 dB on {np.mean(gap > 20) * 100:.1f}% of the playing")
+        name = n + ("" if f is None else f", {f} {v}")
+        R.check("channels", name, not bad, "; ".join(bad) if bad else "both channels follow the playing")
+
 TESTS = {"stability": t_stability, "sweep": t_sweep, "touch": t_touch, "aliasing": t_alias, "continuity": t_continuity,
-         "alive": t_alive, "rates": t_rates}
-NEEDS_DI = {"sweep", "continuity", "alive", "rates"}
+         "alive": t_alive, "rates": t_rates, "channels": t_channels}
+NEEDS_DI = {"sweep", "continuity", "alive", "rates", "channels"}
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("spec"); ap.add_argument("--cli"); ap.add_argument("--quick", action="store_true")
