@@ -1,0 +1,12 @@
+{
+  "about": "Settings tools/web_parity.mjs renders through the WebAssembly engine and the native CLI; knobs not named are at the plug-in's defaults.",
+  "settings": [
+    { "name": "default (the studio clean)", "knobs": {} },
+    { "name": "volume 10", "knobs": { "volume": 10 } },
+    { "name": "drive 10 (lead)", "knobs": { "drive": 10, "volume": 6 } },
+    { "name": "drive 5, clip 10", "knobs": { "drive": 5, "clip": 10 } },
+    { "name": "master 10, sag 10", "knobs": { "master": 10, "sag": 10, "volume": 7 } },
+    { "name": "everything up (bright, shift)", "knobs": { "volume": 10, "drive": 10, "treble": 10, "middle": 10, "bass": 10, "presence": 10, "clip": 10, "sag": 10, "master": 10, "bright": 1, "shift": 1 } },
+    { "name": "AMP output, trim -6 dB, low input calibration", "knobs": { "output": 1, "trim": -6, "involts": 0.6, "volume": 7, "drive": 3, "sag": 5 } }
+  ]
+}

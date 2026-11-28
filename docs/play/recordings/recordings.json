@@ -1,0 +1,53 @@
+{
+  "about": "Dry guitar recordings (DI, no amp) the player puts through the amp, listed in the input picker in this order, with 'Your guitar (audio input)' after them. To add one: encode it from its WAV as mono Opus (ffmpeg -i x.wav -c:a libopus -b:a 192k -vbr on -compression_level 10 -application audio x.opus), make a WebM copy of the same stream for Safari (ffmpeg -i x.opus -c:a copy x.webm), put both here and add an entry. file and fallbacks are relative to this list. seconds: its length (the player checks the decode against it). trim_db: gain before the amp (0 = the level it was recorded at). involts: the interface's calibration when it was recorded, volts at the guitar jack for 0 dBFS (omit for the amp's default).",
+  "recordings": [
+    {
+      "id": "the-puzzle-remains-lead",
+      "name": "the puzzle remains — lead",
+      "guitar": "Gretsch Duo Jet",
+      "description": "The whole electric part from Broken Ladder's \"the puzzle remains\", the take on the record, recorded straight in.",
+      "file": "the-puzzle-remains-lead.opus",
+      "fallbacks": [
+        "the-puzzle-remains-lead.webm"
+      ],
+      "seconds": 86.3,
+      "trim_db": 0.0
+    },
+    {
+      "id": "shape-of-the-almost-rhythm",
+      "name": "The Shape of the Almost — rhythm",
+      "guitar": "Gretsch G5220 Electromatic Jet",
+      "description": "Verse 1 through chorus 1 of Broken Ladder's \"The Shape of the Almost\", as comped for the song.",
+      "file": "shape-of-the-almost-rhythm.opus",
+      "fallbacks": [
+        "shape-of-the-almost-rhythm.webm"
+      ],
+      "seconds": 65.8,
+      "trim_db": 0.0
+    },
+    {
+      "id": "shape-of-the-almost-chorus-lead",
+      "name": "The Shape of the Almost — chorus lead",
+      "guitar": "Gretsch G5220 Electromatic Jet",
+      "description": "The second chorus and bridge lead line from \"The Shape of the Almost\".",
+      "file": "shape-of-the-almost-chorus-lead.opus",
+      "fallbacks": [
+        "shape-of-the-almost-chorus-lead.webm"
+      ],
+      "seconds": 39.5,
+      "trim_db": 0.0
+    },
+    {
+      "id": "red-rocks-riff",
+      "name": "Red Rocks — riff",
+      "guitar": "Gibson SG Custom",
+      "description": "A heavier riff from a Broken Ladder work in progress, one continuous pass.",
+      "file": "red-rocks-riff.opus",
+      "fallbacks": [
+        "red-rocks-riff.webm"
+      ],
+      "seconds": 33.4,
+      "trim_db": 0.0
+    }
+  ]
+}
