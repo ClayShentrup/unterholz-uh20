@@ -20,7 +20,8 @@ What each check catches (all were real bugs in these amps):
   rates        44.1 / 48 / 96 kHz give the same level and spectrum (sample-rate-dependent filters or solvers)
   channels     each output channel measured on its own, at the hot corners with every effect (fx_knobs) at several
                levels: no channel may drop out against the same setting without effects, and the two channels may not
-               differ by more than 20 dB while playing (a one-channel collapse hides in a mono sum). Effects listed in
+               differ by more than 20 dB while playing (a one-channel collapse hides in a mono sum); an effect may lag the dry by one 10 ms frame, since a delayed
+               wet-only channel's note onsets land in the next frame. Effects listed in
                fx_dynamic (a volume swell) change the level on purpose and are only covered by the stability check
 """
 import json, os, subprocess, sys, tempfile, time, argparse
@@ -273,13 +274,15 @@ def t_channels(amp, R, pool, quick, di):
     for (n, kn, f, v), y in res:
         bad = []
         for c in range(y.shape[1]):
-            e = env_db(y[:, c]); er = env_db(ref[n][:, c]); m = min(len(e), len(er), len(act))
-            loud = act[:m] & (er[:m] > er[:m].max() - 30)
-            drop = (e[:m] - er[:m])[loud] < -12
+            e = env_db(y[:, c]); er = env_db(ref[n][:, c]); m = min(len(e), len(er), len(act)); e, er = e[:m], er[:m]
+            loud = act[:m] & (er > er.max() - 30)
+            erl = np.minimum(er, np.concatenate([er[:1], er[:-1]]))   # an effect may lag the dry by up to one 10 ms frame
+            drop = (e - erl)[loud] < -12
             if drop.mean() > LIMITS["dropout_frac"]: bad.append(f"channel {c + 1} drops out on {drop.mean() * 100:.1f}% of the playing")
         if y.shape[1] == 2:
             el, er2 = env_db(y[:, 0]), env_db(y[:, 1]); m = min(len(el), len(act)); loud = act[:m]
-            gap = np.abs(el[:m] - er2[:m])[loud]
+            el, er2 = el[:m], er2[:m]; sh = lambda v: np.concatenate([v[:1], v[:-1]])
+            gap = np.minimum.reduce([np.abs(el - er2), np.abs(sh(el) - er2), np.abs(el - sh(er2))])[loud]   # same one-frame lag
             if np.mean(gap > 20) > LIMITS["dropout_frac"]: bad.append(f"channels differ by over 20 dB on {np.mean(gap > 20) * 100:.1f}% of the playing")
         name = n + ("" if f is None else f", {f} {v}")
         R.check("channels", name, not bad, "; ".join(bad) if bad else "both channels follow the playing")
