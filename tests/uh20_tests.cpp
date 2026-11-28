@@ -90,6 +90,9 @@ static Params all0(double drive) { return P({{"drive", drive}, {"volume", 0}, {"
 // ---------------------------------------------------------------- golden input/output pairs
 // frozen = recorded by v0.2.0 (before Drive existed) or, the *_sag0 pair, by v0.3.0, and never rewritten: at Drive 0 and Sag 0 the
 // engine must still match them exactly. rhythm_clip and rhythm_pushed (Sag 5 and 8) were frozen until v0.3.1 redesigned Sag.
+// v0.4.1 recalibrated the output (Engine::VFS, a fixed gain after the circuit): the frozen files keep the level they were recorded at,
+// 0 dBFS = 0.5 V at the REC jack and 2 V at the AMP jack, so they are compared with that gain change applied and nothing else.
+static double frozenGain(const Params& p) { return (p.output == 1 ? 2.0 : 0.5) / Engine::VFS; }
 struct Golden { const char* name; Params p; double seconds; bool frozen; };
 static std::string goldenDir() {
     std::string f = __FILE__; const size_t s = f.find_last_of("/\\"); return (s == std::string::npos ? std::string(".") : f.substr(0, s)) + "/golden/";
@@ -122,8 +125,8 @@ int main(int argc, char** argv) {
         FILE* h = std::fopen((goldenDir() + g.name + ".f32").c_str(), "rb");
         if (!h) { check(false, g.name, "missing golden file%.0f%.0f", 0, 0); continue; }
         std::vector<float> f; float t; while (std::fread(&t, 4, 1, h) == 1) f.push_back(t); std::fclose(h);
-        const Out o = render(g.p, plucks(g.seconds)); double e = 0, s = 0;
-        for (size_t i = 0; i < o.L.size() && i < f.size(); ++i) { const double d = o.L[i] - f[i]; e += d * d; s += (double)f[i] * f[i]; }
+        const Out o = render(g.p, plucks(g.seconds)); double e = 0, s = 0; const double k = g.frozen ? frozenGain(g.p) : 1.0;
+        for (size_t i = 0; i < o.L.size() && i < f.size(); ++i) { const double d = o.L[i] - f[i] * k; e += d * d; s += (double)f[i] * k * f[i] * k; }
         if (f.size() != o.L.size()) e = s;
         check(db(e / s) < -100, (std::string("matches golden/") + g.name).c_str(), "%.1f dB (limit %.0f)", db(e / s), -100);
     }

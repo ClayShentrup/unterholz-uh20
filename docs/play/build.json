@@ -3,6 +3,6 @@
   "emscripten": "7.0.1",
   "flags": "-std=c++20 -O3 -fno-exceptions -fno-rtti --no-entry -sSTANDALONE_WASM -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432 -sSTACK_SIZE=1048576",
   "sources": "source/dsp/UH20Engine.h source/dsp/JfetKit.h web/uh20_web.cpp tools/build_web.sh",
-  "sources_sha256": "1a56decb926774785cda1b974ccb17d24319f76036f24e5b87b74ba2d4c0e261",
-  "wasm_sha256": "f33497f00debee1c8982af79f70f15f23d20c0f805e2d6c79cc918b2b1a8ee40"
+  "sources_sha256": "4b0847029af1bd55055cc59b21148f1f402e5495154c07c3d4451506b69cf725",
+  "wasm_sha256": "8387c57c408d0e89387e4b32defb560ddc8c738eebeb8c05587c4d0e97cdf1b0"
 }

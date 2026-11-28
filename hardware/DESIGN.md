@@ -18,6 +18,41 @@ The deliverable is a schematic of ordinary parts. The plugin (`source/dsp/UH20En
 - First results: cold clipper 0.3%, gain stage 0.7%, input stage 1.0% of swing.
 - Interstage dividers are the tube divider × the next stage's input scale × the previous stage's output scale.
 
+## v0.4.1: the output, calibrated (2026-11-28)
+
+The circuit is unchanged. What changed is how the plug-in reads its output jacks: one fixed gain at the very end of the chain, after
+the circuit and with the output trim, like the input level of the interface the amp is recorded through. It is
+`Engine::VFS` in `source/dsp/UH20Engine.h`: **2.4 V peak at the REC or AMP jack = 0 dBFS**, the output's counterpart of the input's
+1.6 V (EINGANG). Up to v0.4.0 the two jacks were read differently, REC at 0.5 V = 0 dBFS and AMP at 2 V, which put the REC output
+12 dB above its analog relationship to AMP and its peaks above full scale (a DAW's floating-point mix takes that; a browser or an
+interface output clips it).
+
+- **Why 2.4 V.** The REC jack has a ceiling: the LM3886 clipping at its rails, through the 1/20 divider and the cab simulator. The
+  highest peak found over the four DIs (`tests/reference/signals`) and every corner of Treble, Middle, Bass, Presence, Bright and
+  Shift at Drive, Volume and Master 10 (Sag and Clip 0, which only lower it) is 2.33 V. At 2.4 V = 0 dBFS that is -0.26 dBFS, so no
+  setting clips with the trim at 0 dB, and the studio clean sits about 7.5 dB under full scale.
+- **Levels on the puzzle-remains lead DI** (peak dBFS / integrated loudness of the mono output, LUFS; the plug-in writes it to both
+  channels, which a stereo meter reads 3 LU higher):
+
+  | setting | v0.4.0 REC | v0.4.1 REC | v0.4.0 AMP | v0.4.1 AMP |
+  |---|---|---|---|---|
+  | defaults | +5.9 / -8.3 | -7.7 / -22.0 | -6.5 / -17.5 | -8.1 / -19.1 |
+  | Drive 8 | +11.9 / +0.9 | -1.8 / -12.7 | -4.2 / -8.2 | -5.7 / -9.8 |
+  | Drive 10, Master 10 | +12.7 / +1.7 | -1.0 / -11.9 | -3.2 / -7.4 | -4.8 / -9.0 |
+
+  REC changed by -13.62 dB (0.5 / 2.4) and AMP by -1.58 dB (2 / 2.4), exactly: every golden and reference render nulls against the
+  v0.4.0 one times that gain to the float32 rounding of the files (-149 dB). The reference set's measurements moved by the same
+  gain (third-octave bands to 0.0001 dB, loudness likewise except one quiet synthetic render, 0.03 LU, whose quietest blocks now fall
+  under the loudness meter's absolute -70 LUFS gate).
+- **Against the Hanwell.** Hanwell 1.2.0 at its defaults on the same DI: -7.2 dBFS peak, -18.0 LUFS (stereo). The UH-20's
+  defaults on REC: -7.7 dBFS, -19.0 LUFS read the same way, 0.9 LU under it.
+- **REC and AMP.** Both jacks now read with the same calibration, so their relationship is the circuit's: at the defaults the peaks
+  are about equal (-7.7 and -8.1 dBFS) and AMP is 2.9 LU louder, the energy the cab simulator's high-pass and 4.9 kHz low-passes take
+  out. A cabinet impulse response after AMP takes out about as much, so AMP into an IR lands near REC; AMP's hottest settings peak
+  near -4.8 dBFS.
+- **Not changed:** the JSFX (`jsfx/`), which keeps the v0.4.0 reading (REC 0.5 V, AMP 2 V = 0 dBFS); the published samples, which
+  are loudness-matched, so a gain before the matching changes nothing in them.
+
 ## The engine, solved with fewer operations (2026-11-28)
 
 The circuit is unchanged; the plug-in now solves it with about a third of the work. Every change is a different way of finding the

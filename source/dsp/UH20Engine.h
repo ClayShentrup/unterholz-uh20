@@ -123,6 +123,11 @@ public:
     static constexpr double RL = 8;            // speaker load, ohms
     static constexpr double GLM = 1 + 22e3 / 5.6e3;   // LM3886 non-inverting gain
     static constexpr double KREC = 1.0 / 20;   // speaker output to the cab simulator's input (19.1k/1k divider)
+    // The output's calibration, not a part of the circuit: the plug-in reads the REC or AMP jack as an interface would, 2.4 V peak
+    // = 0 dBFS (the output's counterpart of the input's 1.6 V, Params::inputVolts). The REC jack's ceiling, the LM3886 clipping
+    // through the divider and the cab simulator, is about 2.3 V, so the hottest settings peak just under 0 dBFS and the studio clean
+    // about 7.5 dB under it (hardware/DESIGN.md, v0.4.1). Applied at the very end, with the output trim.
+    static constexpr double VFS = 2.4;
     double CCOMP = 220e-12;                    // compensation capacitor on the pair's output drain
     // UH20_REFERENCE=1 builds the reference engine (uh20_cli_ref): 8x oversampling and the original general solvers, the engine
     // tests/reference was rendered with. The default build solves the same circuit with the analytic Newtons in JfetKit.h.
@@ -330,7 +335,7 @@ public:
         cp1.bp2(276.845, 1.4134, fs); a1 = std::pow(10.0, 10.5098 / 20) - 1;
         cp2.bp2(2791.552, 2.7093, fs); a2 = std::pow(10.0, 9.8481 / 20) - 1;
         clp1.lp2(4855.70, 1.1474, fs); clp2.lp2(4855.70, 1.1474, fs);
-        gout = std::pow(10.0, p.trimDb / 20) / (p.output == 1 ? 2.0 : 0.5);
+        gout = std::pow(10.0, p.trimDb / 20) / VFS;   // REC and AMP read with the same calibration (v0.4.0: 0.5 V and 2 V)
         gc1.vOff = jk::gateOff(1e3); gcD.vOff = jk::gateOff(dN.Zi); gc2.vOff = jk::gateOff(rN1.rOut); gc3.vOff = jk::gateOff(rN2.rOut); gcL.vOff = jk::gateOff(rN3.rOut);
         if (!first && force) {}
         (void)force;

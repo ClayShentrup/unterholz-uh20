@@ -50,11 +50,10 @@ export const amp = {
       help: 'AMP: no cabinet. For a real amp and speaker, or your own cabinet impulse response after the plugin.',
       helpRec: 'REC: the analog cab-sim output (the hardware\'s REC jack). For recording straight into a DAW.' },
     { key: 'involts', cli: 'involts', label: 'input volts', kind: 'input', min: 0.1, max: 4, step: 0.01, def: 1.6 },
-    // Output trim: a plug-in parameter with no knob on its panel (the monitor's Volume does that job here). The plug-in's
-    // output runs hot (the built-in lead peaks at +5 dBFS at the defaults and +11 at ANTRIEB 8), which a DAW's floating-point
-    // mix takes but a browser's output clips, so the player sits 14 dB lower: peaks stay under 0 dBFS at every setting, and
-    // the level is about the other amps' players'. It changes only the level, not the tone.
-    { key: 'trim', cli: 'trim', label: 'trim', kind: 'input', min: -24, max: 24, step: 0.1, def: -14 },
+    // Output trim: a plug-in parameter with no knob on its panel (the monitor's Volume does that job here). At 0 dB, as in
+    // the plug-in: since v0.4.1 the plug-in's own output is calibrated (2.4 V at its jack = 0 dBFS), so the recordings peak
+    // 7 to 10 dB under full scale at the defaults and stay under 0 dBFS at the hottest settings.
+    { key: 'trim', cli: 'trim', label: 'trim', kind: 'input', min: -24, max: 24, step: 0.1, def: 0 },
   ],
 
   // the plug-in's panel: one row of knobs in its three sections (the switches sit under them)
