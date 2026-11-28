@@ -1,7 +1,7 @@
 01 Clean - volume 5, treble 3, middle 7, bass 5, presence 6, master 6.5 (the puzzle remains)|volume=5 treble=3 middle=7 bass=5 presence=6 master=6.5
 02 Clean - volume 3, treble 5, middle 6, bass 4, presence 5, master 6.5, bright|volume=3 treble=5 middle=6 bass=4 presence=5 master=6.5 bright=1
-03 Clean - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5|volume=7 treble=4 middle=7 bass=5 presence=6 master=7.5
-04 Clean - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7|volume=8 treble=4 middle=7 bass=5 presence=6 master=8 sag=7
+03 Crunch - volume 7, treble 4, middle 7, bass 5, presence 6, master 7.5|volume=7 treble=4 middle=7 bass=5 presence=6 master=7.5
+04 Heavy crunch - volume 8, treble 4, middle 7, bass 5, presence 6, master 8, sag 7|volume=8 treble=4 middle=7 bass=5 presence=6 master=8 sag=7
 05 Drive 0, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=0 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
 06 Drive 2, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=2 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
 07 Drive 4, clip 0 - volume 5, treble 4, middle 7, bass 5, presence 6, master 6.5|drive=4 clip=0 volume=5 treble=4 middle=7 bass=5 presence=6 master=6.5
